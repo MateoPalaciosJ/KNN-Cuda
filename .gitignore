@@ -1,0 +1,33 @@
+#Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+#Virtual environments
+.venv/
+venv/
+env/
+
+#VS Code
+.vscode/
+
+#Jupyter
+.ipynb_checkpoints/
+
+#archivos compilados
+build/
+dist/
+*.so
+*.o
+*.obj
+*.dll
+*.exe
+
+#CUDA
+*.ptx
+*.cubin
+
+#os
+.DS_Store
+Thumbs.db  

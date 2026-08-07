@@ -33,9 +33,27 @@ La implementación matemática no se mezcla con el registro de operadores
 
 `sumar_vectores` no forma parte de KNN y existe solo para validar recepción de tensores, lectura C++, creación de la salida, retorno hacia Python y errores de contrato
 
+## Primera operación KNN
+
+`distancias_l2_cuadradas` es la primera operación KNN real implementada en C++ durante la Fase 2
+
+Recibe `datos_consulta` con forma `[Q, D]` y `datos_entrenamiento` con forma `[N, D]`, ambos tensores CPU `float32` bidimensionales, no vacíos y con valores finitos
+
+Devuelve un tensor CPU `float32` con forma `[Q, N]` donde cada elemento es la suma de las diferencias al cuadrado entre una consulta y una muestra de entrenamiento
+
+La implementación utiliza operaciones ATen para expresar directamente la resta con broadcasting, el cuadrado y la suma sobre las características, sin aplicar raíz cuadrada ni requerir contigüidad
+
+NumPy sigue siendo la referencia primaria de corrección y las pruebas comparan esta operación con `distancias_l2_cuadradas` del motor de referencia
+
+El esquema se define una sola vez y su implementación se registra para CPU, por lo que una fase posterior podrá registrar una implementación CUDA bajo el mismo esquema
+
+No se han incorporado optimizaciones, bloques, paralelismo manual ni kernels CUDA
+
 ## Validaciones
 
 `sumar_vectores` rechaza tensores fuera de CPU, dtype distinto de `float32`, dimensiones distintas de una, tensores vacíos y longitudes diferentes
+
+`distancias_l2_cuadradas` rechaza tensores fuera de CPU, dtype distinto de `float32`, dimensiones distintas de dos, tensores vacíos, valores no finitos y cantidades de características diferentes
 
 No convierte tipos de forma silenciosa ni modifica los tensores de entrada
 
@@ -53,6 +71,14 @@ La verificación completa ejecuta primero esas pruebas y después `python -m pyt
 
 ## Alcance pendiente
 
-No se implementan operaciones KNN, integración de `ClasificadorKNNCUDA`, CUDA, kernels, GPU ni una API pública adicional
+`distancias_l2_cuadradas` ya está implementada en C++ CPU
+
+Todavía no están implementadas `seleccionar_top_k`, `votacion_uniforme` ni el pipeline KNN completo en C++
+
+`ClasificadorKNNCUDA` todavía no utiliza el backend C++
+
+CUDA, kernels y GPU siguen pendientes
+
+No existe una API pública adicional
 
 La Fase 3 reutilizará el registro de operadores, la configuración de extensión y la separación entre contratos, implementación y registro para añadir implementaciones CUDA

@@ -1,8 +1,11 @@
 import importlib
 from pathlib import Path
 
+import numpy as np
 import pytest
 import torch
+
+from knn_cuda.referencia import distancias_l2_cuadradas
 
 
 def test_backend_cpp_se_importa_como_extension_compilada() -> None:
@@ -85,3 +88,215 @@ def test_sumar_vectores_rechaza_longitudes_distintas() -> None:
 
     with pytest.raises(RuntimeError, match="misma longitud"):
         torch.ops.knn_cuda.sumar_vectores(primer_vector, segundo_vector)
+
+
+def test_distancias_l2_cuadradas_calcula_una_consulta_y_una_muestra() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_consulta = torch.tensor([[0.0, 0.0]], dtype=torch.float32)
+    datos_entrenamiento = torch.tensor([[3.0, 4.0]], dtype=torch.float32)
+    esperado = torch.tensor([[25.0]], dtype=torch.float32)
+
+    distancias = torch.ops.knn_cuda.distancias_l2_cuadradas(
+        datos_consulta, datos_entrenamiento
+    )
+
+    assert distancias.device.type == "cpu"
+    assert distancias.dtype == torch.float32
+    assert distancias.shape == (1, 1)
+    assert torch.equal(distancias, esperado)
+
+
+def test_distancias_l2_cuadradas_calcula_varias_consultas_y_muestras() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_consulta = torch.tensor([[0.0, -1.0], [2.0, 3.0]], dtype=torch.float32)
+    datos_entrenamiento = torch.tensor(
+        [[0.0, -1.0], [0.0, -1.0], [-1.0, 2.0]], dtype=torch.float32
+    )
+    esperado = torch.tensor(
+        [[0.0, 0.0, 10.0], [20.0, 20.0, 10.0]], dtype=torch.float32
+    )
+
+    distancias = torch.ops.knn_cuda.distancias_l2_cuadradas(
+        datos_consulta, datos_entrenamiento
+    )
+
+    assert distancias.shape == (2, 3)
+    assert torch.equal(distancias, esperado)
+
+
+def test_distancias_l2_cuadradas_calcula_con_una_caracteristica() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_consulta = torch.tensor([[1.0], [-2.0]], dtype=torch.float32)
+    datos_entrenamiento = torch.tensor([[1.0], [3.0]], dtype=torch.float32)
+    esperado = torch.tensor([[0.0, 4.0], [9.0, 25.0]], dtype=torch.float32)
+
+    distancias = torch.ops.knn_cuda.distancias_l2_cuadradas(
+        datos_consulta, datos_entrenamiento
+    )
+
+    assert torch.equal(distancias, esperado)
+
+
+def test_distancias_l2_cuadradas_coincide_con_la_referencia_numpy() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_consulta_numpy = np.array(
+        [[0.5, -1.0, 2.0], [3.0, 0.0, -2.0]], dtype=np.float32
+    )
+    datos_entrenamiento_numpy = np.array(
+        [[0.0, -1.0, 1.0], [2.0, 3.0, -2.0], [-1.0, 4.0, 0.0]],
+        dtype=np.float32,
+    )
+    esperado = distancias_l2_cuadradas(
+        datos_consulta_numpy, datos_entrenamiento_numpy
+    )
+    datos_consulta = torch.from_numpy(datos_consulta_numpy)
+    datos_entrenamiento = torch.from_numpy(datos_entrenamiento_numpy)
+
+    distancias = torch.ops.knn_cuda.distancias_l2_cuadradas(
+        datos_consulta, datos_entrenamiento
+    )
+
+    np.testing.assert_allclose(
+        distancias.numpy(), esperado, rtol=1e-6, atol=1e-6
+    )
+
+
+def test_distancias_l2_cuadradas_acepta_vistas_no_contiguas() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_consulta = torch.tensor(
+        [[0.0, 2.0], [1.0, 3.0]], dtype=torch.float32
+    ).transpose(0, 1)
+    datos_entrenamiento = torch.tensor(
+        [[0.0, 4.0], [2.0, 6.0]], dtype=torch.float32
+    ).transpose(0, 1)
+    esperado = distancias_l2_cuadradas(
+        datos_consulta.numpy(), datos_entrenamiento.numpy()
+    )
+
+    distancias = torch.ops.knn_cuda.distancias_l2_cuadradas(
+        datos_consulta, datos_entrenamiento
+    )
+
+    assert not datos_consulta.is_contiguous()
+    assert not datos_entrenamiento.is_contiguous()
+    np.testing.assert_allclose(
+        distancias.numpy(), esperado, rtol=1e-6, atol=1e-6
+    )
+
+
+def test_distancias_l2_cuadradas_es_determinista_y_no_modifica_entradas() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_consulta = torch.tensor([[0.0, 1.0], [2.0, 3.0]], dtype=torch.float32)
+    datos_entrenamiento = torch.tensor([[1.0, 0.0], [4.0, 5.0]], dtype=torch.float32)
+    datos_consulta_antes = datos_consulta.clone()
+    datos_entrenamiento_antes = datos_entrenamiento.clone()
+
+    primeras_distancias = torch.ops.knn_cuda.distancias_l2_cuadradas(
+        datos_consulta, datos_entrenamiento
+    )
+    segundas_distancias = torch.ops.knn_cuda.distancias_l2_cuadradas(
+        datos_consulta, datos_entrenamiento
+    )
+
+    assert torch.equal(primeras_distancias, segundas_distancias)
+    assert torch.equal(datos_consulta, datos_consulta_antes)
+    assert torch.equal(datos_entrenamiento, datos_entrenamiento_antes)
+
+
+def test_distancias_l2_cuadradas_rechaza_datos_consulta_float64() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_consulta = torch.tensor([[1.0]], dtype=torch.float64)
+    datos_entrenamiento = torch.tensor([[1.0]], dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="datos_consulta"):
+        torch.ops.knn_cuda.distancias_l2_cuadradas(
+            datos_consulta, datos_entrenamiento
+        )
+
+
+def test_distancias_l2_cuadradas_rechaza_datos_entrenamiento_float64() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_consulta = torch.tensor([[1.0]], dtype=torch.float32)
+    datos_entrenamiento = torch.tensor([[1.0]], dtype=torch.float64)
+
+    with pytest.raises(RuntimeError, match="datos_entrenamiento"):
+        torch.ops.knn_cuda.distancias_l2_cuadradas(
+            datos_consulta, datos_entrenamiento
+        )
+
+
+def test_distancias_l2_cuadradas_rechaza_datos_enteros() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_consulta = torch.tensor([[1]], dtype=torch.int64)
+    datos_entrenamiento = torch.tensor([[1]], dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="datos_consulta"):
+        torch.ops.knn_cuda.distancias_l2_cuadradas(
+            datos_consulta, datos_entrenamiento
+        )
+
+
+def test_distancias_l2_cuadradas_rechaza_datos_consulta_unidimensionales() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_consulta = torch.tensor([1.0], dtype=torch.float32)
+    datos_entrenamiento = torch.tensor([[1.0]], dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="datos_consulta"):
+        torch.ops.knn_cuda.distancias_l2_cuadradas(
+            datos_consulta, datos_entrenamiento
+        )
+
+
+def test_distancias_l2_cuadradas_rechaza_datos_entrenamiento_tridimensionales() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_consulta = torch.tensor([[1.0]], dtype=torch.float32)
+    datos_entrenamiento = torch.ones((1, 1, 1), dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="datos_entrenamiento"):
+        torch.ops.knn_cuda.distancias_l2_cuadradas(
+            datos_consulta, datos_entrenamiento
+        )
+
+
+def test_distancias_l2_cuadradas_rechaza_datos_vacios() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_consulta = torch.empty((0, 1), dtype=torch.float32)
+    datos_entrenamiento = torch.tensor([[1.0]], dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="datos_consulta"):
+        torch.ops.knn_cuda.distancias_l2_cuadradas(
+            datos_consulta, datos_entrenamiento
+        )
+
+
+def test_distancias_l2_cuadradas_rechaza_caracteristicas_distintas() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_consulta = torch.tensor([[1.0, 2.0]], dtype=torch.float32)
+    datos_entrenamiento = torch.tensor([[1.0]], dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="misma cantidad de caracteristicas"):
+        torch.ops.knn_cuda.distancias_l2_cuadradas(
+            datos_consulta, datos_entrenamiento
+        )
+
+
+def test_distancias_l2_cuadradas_rechaza_nan() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_consulta = torch.tensor([[float("nan")]], dtype=torch.float32)
+    datos_entrenamiento = torch.tensor([[1.0]], dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="datos_consulta"):
+        torch.ops.knn_cuda.distancias_l2_cuadradas(
+            datos_consulta, datos_entrenamiento
+        )
+
+
+def test_distancias_l2_cuadradas_rechaza_infinito() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_consulta = torch.tensor([[1.0]], dtype=torch.float32)
+    datos_entrenamiento = torch.tensor([[float("inf")]], dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="datos_entrenamiento"):
+        torch.ops.knn_cuda.distancias_l2_cuadradas(
+            datos_consulta, datos_entrenamiento
+        )

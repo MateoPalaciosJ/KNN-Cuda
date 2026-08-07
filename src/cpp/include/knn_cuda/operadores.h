@@ -11,4 +11,9 @@ torch::Tensor sumar_vectores(
     const torch::Tensor& segundo_vector
 );
 
+torch::Tensor distancias_l2_cuadradas(
+    const torch::Tensor& datos_consulta,
+    const torch::Tensor& datos_entrenamiento
+);
+
 }

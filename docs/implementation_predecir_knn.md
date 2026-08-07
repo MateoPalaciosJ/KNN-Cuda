@@ -95,7 +95,7 @@ La complejidad dominante depende del tamaño relativo de `D` y `log N`, sin opti
 
 ## 9  Estrategia de pruebas
 
-Las pruebas de integración en `tests/cpu/test_reference.py` cubren `k = 1`, `k = N`, clasificación binaria y multiclase, una sola clase, consultas únicas y múltiples, etiquetas no consecutivas y negativas, empates de distancia, empates de voto, duplicados, casos manuales, varias características, determinismo, inmutabilidad y propagación de errores
+Las pruebas de integración en `tests/cpu/test_referencia.py` cubren `k = 1`, `k = N`, clasificación binaria y multiclase, una sola clase, consultas únicas y múltiples, etiquetas no consecutivas y negativas, empates de distancia, empates de voto, duplicados, casos manuales, varias características, determinismo, inmutabilidad y propagación de errores
 
 Una comparación secundaria con scikit-learn podrá añadirse en una fase posterior sin convertirla en una dependencia obligatoria. La fuente de verdad actual son los casos manuales y las operaciones CPU aprobadas
 

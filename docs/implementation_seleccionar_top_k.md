@@ -115,7 +115,7 @@ Los empates deben resolverse siempre por el menor índice original, incluso cuan
 
 ## 13  Estrategia de pruebas
 
-Las pruebas vivirán en `tests/cpu/test_reference.py` y comprobarán de forma independiente:
+Las pruebas vivirán en `tests/cpu/test_referencia.py` y comprobarán de forma independiente:
 
 - Forma y tipo de ambas salidas
 - Casos `k = 1` y `k = N`

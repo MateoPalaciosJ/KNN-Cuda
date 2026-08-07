@@ -225,7 +225,7 @@ Un overflow producido por valores extremos no debe ocultarse silenciosamente. Si
 
 Las pruebas vivirán en:
 
-`tests/cpu/test_reference.py`
+`tests/cpu/test_referencia.py`
 
 Como mínimo, deben existir las siguientes pruebas
 

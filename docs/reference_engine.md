@@ -36,7 +36,7 @@ El motor recorrerá el conjunto completo de entrenamiento para conservar una def
 
 ## 3  Funciones del módulo
 
-Las funciones públicas del archivo `reference.py` serán únicamente:
+Las funciones públicas del archivo `referencia.py` serán únicamente:
 
 - `distancias_l2_cuadradas`, responsable del cálculo de distancias
 - `seleccionar_top_k`, responsable de seleccionar y ordenar vecinos
@@ -112,13 +112,13 @@ La función debe devolver las distancias en su forma cuadrada, porque la raíz c
 ### Entradas
 
 - `etiquetas_vecinos` con forma `[Q, K]`
-- Etiquetas enteras
-- Clases originales ordenadas o una representación equivalente claramente definida
+- Etiquetas enteras originales sin necesidad de ser consecutivas
+- Etiquetas negativas o de valores grandes cuando correspondan
 
 ### Salida
 
 - Predicciones con forma `[Q]`
-- Etiquetas en la representación original
+- Una etiqueta original por consulta
 
 ### Responsabilidad
 
@@ -133,7 +133,7 @@ La función debe devolver las distancias en su forma cuadrada, porque la raíz c
 - Acceder a `datos_entrenamiento` o `datos_consulta`
 - Modificar las entradas
 
-La función solo recibirá las etiquetas de los vecinos ya seleccionados. No debe inferir índices ni recuperar etiquetas desde el conjunto de entrenamiento
+La función solo recibe `etiquetas_vecinos` y no necesita una representación adicional de clases. No recibe `clases_`, `numero_clases`, etiquetas codificadas ni índices de vecinos
 
 ## 7  Contrato de `predecir_knn`
 
@@ -183,7 +183,7 @@ Validará que la matriz de distancias sea un `numpy.ndarray` bidimensional, no v
 
 ### `votacion_uniforme`
 
-Validará que `etiquetas_vecinos` sea un arreglo bidimensional no vacío, que contenga etiquetas enteras, que el número de clases sea compatible con las etiquetas y que la representación de clases originales esté ordenada y sea inequívoca
+Validará que `etiquetas_vecinos` sea un arreglo bidimensional no vacío y que contenga etiquetas enteras distintas de booleano
 
 ### `predecir_knn`
 
@@ -273,11 +273,11 @@ La aceptación requiere revisar también que los errores sean claros, que las en
 
 La implementación futura vivirá en:
 
-`src/python/knn_cuda/reference.py`
+`src/python/knn_cuda/referencia.py`
 
 Las pruebas vivirán en:
 
-`tests/cpu/test_reference.py`
+`tests/cpu/test_referencia.py`
 
 El módulo de referencia debe permanecer separado de la extensión CUDA y no debe depender de PyTorch ni de scikit-learn para realizar sus cálculos
 
@@ -295,3 +295,5 @@ El módulo de referencia debe permanecer separado de la extensión CUDA y no deb
 - No mezclar validación, distancia, selección y votación en una sola función
 
 La fase debe terminar con una referencia CPU directa, estable y fácil de depurar, sin decisiones pendientes sobre el comportamiento descrito en este documento
+
+La restricción de no crear `ClasificadorKNNCUDA` aplica únicamente a la implementación del motor CPU de referencia. La interfaz de alto nivel de la Fase 1 se define por separado como `ClasificadorKNNCUDA(numero_vecinos=5)` con `ajustar()`, `predecir()` y `vecinos_mas_cercanos()`, y delega el cálculo en las funciones de este módulo

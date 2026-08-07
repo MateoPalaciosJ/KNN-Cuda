@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from knn_cuda.reference import (
+from knn_cuda.referencia import (
     distancias_l2_cuadradas,
     predecir_knn,
     seleccionar_top_k,

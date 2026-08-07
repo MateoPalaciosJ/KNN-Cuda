@@ -106,7 +106,7 @@ Los errores de tipo usan `TypeError` y los errores de forma o tamaño usan `Valu
 
 ## 12  Estrategia de pruebas
 
-Las pruebas en `tests/cpu/test_reference.py` verifican forma, dtype, clasificación binaria y multiclase, una sola clase, `k = 1`, etiquetas negativas, etiquetas no consecutivas, etiquetas grandes, empates, determinismo, inmutabilidad y validaciones
+Las pruebas en `tests/cpu/test_referencia.py` verifican forma, dtype, clasificación binaria y multiclase, una sola clase, `k = 1`, etiquetas negativas, etiquetas no consecutivas, etiquetas grandes, empates, determinismo, inmutabilidad y validaciones
 
 Los resultados esperados se definen explícitamente sin reutilizar `votacion_uniforme`
 

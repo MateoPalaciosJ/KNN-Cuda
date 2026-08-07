@@ -4,7 +4,7 @@
 
 El proyecto tiene como objetivo construir un motor de **K vecinos más cercanos (KNN) exacto**, acelerado con CUDA. La primera versión estará orientada a clasificación y buscará los vecinos mediante fuerza bruta, calculando la distancia entre cada consulta y cada elemento del conjunto de referencia.
 
-La prioridad inicial es obtener resultados correctos, reproducibles y comparables con una implementación de referencia en scikit-learn. Una vez validada esa base, se podrán incorporar optimizaciones de rendimiento sin cambiar el significado del resultado.
+La prioridad inicial es obtener resultados correctos, reproducibles y comparables con la implementación CPU propia basada en NumPy y las reglas deterministas de KNN-Cuda. scikit-learn se utilizará únicamente como referencia secundaria en casos compatibles y sin ambigüedad
 
 ## 2. Flujo general
 
@@ -58,11 +58,14 @@ Los kernels CUDA serán responsables del trabajo masivamente paralelo sobre la G
 
 La primera implementación puede separar las fases de cálculo, selección y votación para facilitar la verificación. Las fusiones de kernels, el uso de memoria compartida y otras optimizaciones quedan para una etapa posterior.
 
-## 6. Estrategia de validación contra scikit-learn
+## 6. Estrategia de validación
 
-scikit-learn será la referencia funcional de la primera versión. La validación se realizará con conjuntos pequeños, casos controlados y datos aleatorios reproducibles.
+La implementación CPU propia basada en NumPy será la referencia primaria de comportamiento de la primera versión. La validación se realizará con conjuntos pequeños, casos controlados y datos aleatorios reproducibles
 
-- Comparar las predicciones del motor CUDA con `KNeighborsClassifier` usando la misma métrica, el mismo valor de `k` y el mismo conjunto de referencia.
+scikit-learn será una referencia secundaria para comparar resultados en casos compatibles y sin ambigüedad
+
+- Comparar primero las distancias, los índices y las predicciones del motor CUDA con la referencia CPU propia usando las mismas reglas de orden y desempate
+- Comparar de forma secundaria las predicciones con `KNeighborsClassifier` usando la misma métrica, el mismo valor de `k` y el mismo conjunto de referencia cuando no existan ambigüedades de desempate
 - Confirmar que ambos lados usan datos `float32` y que la distancia comparada es la euclidiana cuadrada, teniendo en cuenta que scikit-learn puede presentar la distancia euclidiana sin elevar al cuadrado en sus salidas.
 - Probar distintos tamaños de conjunto, dimensiones, cantidades de consultas y valores válidos de `k`.
 - Incluir casos límite: `k = 1`, `k` igual al número de muestras de referencia, clases repetidas y consultas coincidentes con puntos existentes.

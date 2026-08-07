@@ -1,4 +1,4 @@
-#KNN-CUDA
+# KNN-CUDA
 
-Implementacion de knn acelerado con Cuda C++
+Implementación de KNN acelerado con CUDA y C++
 

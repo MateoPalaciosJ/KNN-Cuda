@@ -34,7 +34,7 @@ El sistema debe:
 - Recibir datos de entrada en formato `float32`.
 - Utilizar la distancia euclidiana cuadrada.
 - Permitir configurar el valor de `k`.
-- Implementar las operaciones `fit()`, `kneighbors()` y `predict()`.
+- Implementar las operaciones `ajustar()`, `vecinos_mas_cercanos()` y `predecir()`
 - Devolver índices de vecinos, distancias y predicciones según la operación solicitada.
 - Soportar inicialmente votación uniforme entre los vecinos.
 - Procesar varias consultas por lote.

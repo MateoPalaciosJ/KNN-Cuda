@@ -10,19 +10,19 @@ Su principio central es demostrar primero la corrección del software y después
 
 El paquete Python se llamará `knn_cuda`. La clase pública principal será `ClasificadorKNNCUDA`, orientada a clasificación KNN exacta
 
-La clase proporcionará las operaciones públicas `__init__()`, `fit()`, `kneighbors()` y `predict()`
+La clase proporcionará las operaciones públicas `__init__()`, `ajustar()`, `vecinos_mas_cercanos()` y `predecir()`
 
-Los parámetros iniciales del constructor serán:
+Durante la Fase 1, el constructor inicial será `ClasificadorKNNCUDA(numero_vecinos=5)` y solo recibirá este parámetro
 
 - `numero_vecinos`: número de vecinos que se utilizarán
-- `tamano_lote_consultas`: número máximo de consultas procesadas por lote
-- `tamano_bloque_entrenamiento`: número de muestras de entrenamiento procesadas por bloque
+
+`tamano_lote_consultas` y `tamano_bloque_entrenamiento` pertenecen al backend CUDA futuro para controlar el procesamiento por lotes y bloques, no son parámetros obligatorios del constructor CPU inicial y solo podrán incorporarse a la API pública cuando la integración CUDA lo requiera
 
 El comportamiento de la API será el siguiente:
 
-- `fit()` recibe el conjunto de entrenamiento y sus etiquetas, prepara el estado del clasificador y devuelve `self` para permitir encadenamiento
-- `kneighbors()` recibe consultas y devuelve distancias e índices de los vecinos, respetando el orden determinista definido en este documento
-- `predict()` busca los vecinos, aplica votación uniforme y devuelve las etiquetas en su representación original
+- `ajustar()` recibe el conjunto de entrenamiento y sus etiquetas, prepara el estado del clasificador y devuelve `self` para permitir encadenamiento
+- `vecinos_mas_cercanos()` recibe consultas y devuelve distancias e índices de los vecinos, respetando el orden determinista definido en este documento
+- `predecir()` busca los vecinos, aplica votación uniforme y devuelve las etiquetas en su representación original
 
 El estado del clasificador, incluyendo el conjunto de entrenamiento, las etiquetas codificadas y los metadatos, permanece gestionado por Python. La API debe ocultar al usuario la coordinación de la extensión C++ y de los kernels CUDA
 
@@ -56,7 +56,7 @@ La API Python puede recibir `numpy.ndarray` o `torch.Tensor`. La capa Python con
 
 Las salidas conservan el tipo de la entrada pública correspondiente: si la entrada pública es un `torch.Tensor`, la salida correspondiente también será un `torch.Tensor`; si la entrada pública es un `numpy.ndarray`, la salida correspondiente también será un `numpy.ndarray`. Internamente, todas las operaciones producen tensores CUDA y la capa Python realiza la conversión final cuando corresponde
 
-`kneighbors()` devuelve distancias `float32` e índices `int64`. `predict()` devuelve las etiquetas originales
+`vecinos_mas_cercanos()` devuelve distancias `float32` e índices `int64` y `predecir()` devuelve las etiquetas originales
 
 ## 4. Etiquetas
 
@@ -73,13 +73,15 @@ El flujo de etiquetas será:
 
 Las etiquetas de texto quedan fuera del alcance inicial. La clase `clases_` debe conservar el orden de las etiquetas originales ordenadas para que la decodificación sea determinista y para que el menor valor de etiqueta resuelva empates de votos
 
+La codificación de etiquetas y `clases_` pertenecen únicamente al backend CUDA futuro. No forman parte del contrato del motor CPU de referencia ni de `votacion_uniforme`, que opera directamente sobre etiquetas originales
+
 ## 5. Distancias
 
 Los kernels calculan la distancia euclidiana cuadrada entre cada consulta y cada muestra de entrenamiento. La búsqueda no calcula la raíz cuadrada, porque la transformación es monótona y no cambia el orden de los vecinos
 
-`kneighbors()` devolverá distancia euclidiana normal para los `k` resultados finales. Por tanto, la raíz cuadrada se aplicará únicamente después de completar la selección de los vecinos, nunca durante el recorrido de búsqueda ni para los candidatos descartados
+`vecinos_mas_cercanos()` devolverá distancia euclidiana normal para los `k` resultados finales, por tanto la raíz cuadrada se aplicará únicamente después de completar la selección de los vecinos, nunca durante el recorrido de búsqueda ni para los candidatos descartados
 
-`predict()` con votación uniforme no necesita calcular raíces: la clasificación depende del orden de los vecinos y de sus etiquetas, no de la escala transformada de la distancia
+`predecir()` con votación uniforme no necesita calcular raíces: la clasificación depende del orden de los vecinos y de sus etiquetas, no de la escala transformada de la distancia
 
 ## 6. Validaciones
 
@@ -98,9 +100,9 @@ La capa Python validará las entradas públicas antes de solicitar operaciones n
 
 Python debe generar errores comprensibles, indicando la condición incumplida y, cuando sea útil, los valores observados y esperados. C++ volverá a comprobar las precondiciones críticas relacionadas con tamaños, tipos, dispositivos y parámetros antes de lanzar kernels. Esta segunda comprobación protege la frontera nativa y evita depender exclusivamente de la validación de alto nivel
 
-## 7. Flujo de `fit()`
+## 7. Flujo de `ajustar()`
 
-`fit()` seguirá este flujo:
+`ajustar()` seguirá este flujo cuando se integre el backend CUDA:
 
 1. Validar las dimensiones, tipos, valores finitos, tamaños y correspondencia entre muestras y etiquetas
 2. Convertir las características a `float32`, obtener una disposición contigua y preparar el dispositivo CUDA
@@ -108,38 +110,40 @@ Python debe generar errores comprensibles, indicando la condición incumplida y,
 4. Transferir a GPU los tensores que deban ser utilizados por el motor
 5. Almacenar en el objeto Python los tensores preparados, las etiquetas codificadas, `clases_` y los metadatos necesarios
 
-`fit()` no ejecuta entrenamiento: KNN no aprende parámetros numéricos. La operación prepara y conserva el conjunto de referencia para consultas posteriores
+`ajustar()` no ejecuta entrenamiento: KNN no aprende parámetros numéricos. La operación prepara y conserva el conjunto de referencia para consultas posteriores
 
-En la versión inicial, el conjunto de entrenamiento completo debe caber en la VRAM disponible. No se contempla una representación parcial ni procesamiento out-of-core durante `fit()`
+En la versión inicial con CUDA, el conjunto de entrenamiento completo debe caber en la VRAM disponible, no se contempla una representación parcial ni procesamiento out-of-core durante `ajustar()`
 
-## 8. Flujo de `kneighbors()`
+## 8. Flujo de `vecinos_mas_cercanos()`
 
-La búsqueda exacta se organizará en dos niveles de partición:
+En el backend CUDA futuro, la búsqueda exacta se organizará en dos niveles de partición:
 
-1. Python divide `datos_consulta` en lotes de tamaño limitado por `tamano_lote_consultas`
+1. Python divide `datos_consulta` en lotes de tamaño limitado por el parámetro interno o futuro `tamano_lote_consultas`
 2. `buscar_vecinos_knn` recibe únicamente un lote de consultas
 3. C++ y CUDA recorren `datos_entrenamiento` en bloques de tamaño limitado por `tamano_bloque_entrenamiento`
 4. Para cada bloque se calculan las distancias euclidianas cuadradas
 5. Se obtiene un Top-K local por consulta dentro del bloque
 6. El Top-K local se fusiona con el Top-K global acumulado para esa consulta
 7. Se repite el proceso hasta revisar exactamente todas las muestras de entrenamiento
-8. Al terminar cada lote, se ordenan los `k` vecinos finales y se convierten sus distancias cuadradas a distancia euclidiana normal para la salida pública
+8. Al terminar cada lote, se ordenan los `k` vecinos finales y se convierten sus distancias cuadradas a distancia euclidiana normal para la salida pública de `vecinos_mas_cercanos()`
 9. Python concatena los resultados de todos los lotes y mantiene el orden original de `datos_consulta`
 
 La división por lotes y bloques no puede cambiar los resultados. La fusión debe conservar el orden por distancia ascendente y, en igualdad de distancia, por menor índice de entrenamiento. La matriz completa `Q x N` no debe ser necesaria en la versión final, porque el consumo temporal de memoria debe estar acotado por el tamaño de los lotes, los bloques y los candidatos Top-K
 
-## 9. Flujo de `predict()`
+## 9. Flujo de `predecir()`
 
-`predict()` reutilizará la búsqueda de vecinos y seguirá este flujo:
+En la referencia CPU actual, `predecir_knn` sigue este flujo:
 
-1. Buscar los índices de los vecinos con `kneighbors()` o mediante la misma operación interna sin materializar resultados innecesarios
-2. Recuperar las etiquetas codificadas correspondientes a esos índices antes de invocar `votacion_knn`
-3. Realizar votación uniforme sobre las etiquetas de cada conjunto de vecinos
-4. Resolver los empates con las reglas deterministas definidas en este documento
-5. Recuperar las etiquetas originales mediante `clases_`
-6. Devolver las etiquetas predichas en la representación original
+1. Obtener `indices_seleccionados` mediante `seleccionar_top_k`
+2. Recuperar `etiquetas_vecinos = etiquetas_entrenamiento[indices_seleccionados]`
+3. Invocar `votacion_uniforme(etiquetas_vecinos)`
+4. Devolver las predicciones con etiquetas originales
 
-Cuando sea posible, `predict()` debe evitar calcular raíces cuadradas, conservar matrices temporales que no necesita y realizar únicamente las transferencias necesarias para obtener las etiquetas finales. La búsqueda seguirá siendo exacta aunque se omitan de la ruta de predicción los datos de distancia que no participan en la votación
+`votacion_uniforme` recibe únicamente `etiquetas_vecinos`, realiza votación uniforme y resuelve los empates por la etiqueta original menor
+
+En el backend CUDA futuro, `predecir()` reutilizará la búsqueda de vecinos y recuperará las etiquetas codificadas correspondientes a los índices antes de invocar `votacion_knn`. La decodificación posterior mediante `clases_` pertenece exclusivamente a ese backend y no modifica el contrato CPU actual
+
+Cuando sea posible, `predecir()` debe evitar calcular raíces cuadradas, conservar matrices temporales que no necesita y realizar únicamente las transferencias necesarias para obtener las etiquetas finales, la búsqueda seguirá siendo exacta aunque se omitan de la ruta de predicción los datos de distancia que no participan en la votación
 
 ## 10. Reglas de desempate
 
@@ -157,15 +161,15 @@ El orden por índice debe aplicarse tanto al ordenar resultados finales como al 
 
 La separación inicial de módulos será la siguiente:
 
-- `classifier.py` conserva el estado del clasificador y presenta la API pública
-- `_validation.py` valida las entradas públicas y los parámetros
-- `_labels.py` codifica y decodifica etiquetas y mantiene la correspondencia con `clases_`
-- `_ops.py` carga y encapsula los operadores registrados de PyTorch
-- `reference.py` contiene la referencia CPU en NumPy para pruebas y comparación
-- `knn_ops.cpp` registra y valida los operadores C++/CUDA y coordina sus lanzamientos
-- `distance_kernel.cu` calcula las distancias euclidianas cuadradas
-- `topk_kernel.cu` selecciona y fusiona vecinos locales y globales
-- `vote_kernel.cu` realiza la votación sobre etiquetas codificadas
+- `clasificador.py` conserva el estado del clasificador y presenta la API pública
+- `_validacion.py` valida las entradas públicas y los parámetros
+- `_etiquetas.py` codifica y decodifica etiquetas y mantiene la correspondencia con `clases_`
+- `_operaciones.py` carga y encapsula los operadores registrados de PyTorch
+- `referencia.py` contiene la referencia CPU en NumPy para pruebas y comparación
+- `operaciones_knn.cpp` registra y valida los operadores C++/CUDA y coordina sus lanzamientos
+- `distancias_kernel.cu` calcula las distancias euclidianas cuadradas
+- `seleccion_top_k_kernel.cu` selecciona y fusiona vecinos locales y globales
+- `votacion_kernel.cu` realiza la votación sobre etiquetas codificadas
 
 CUDA no conoce Python ni las etiquetas originales. C++ tampoco debe conservar el estado del clasificador; recibe tensores, parámetros y metadatos de una operación y devuelve resultados. Python es la única capa responsable del estado de alto nivel y de la traducción entre etiquetas originales y codificadas
 
@@ -192,6 +196,8 @@ Los operadores internos iniciales serán:
 - **Responsabilidad:** realizar la votación uniforme y resolver empates de forma determinista
 
 `votacion_knn` no recibe índices de vecinos ni accede al conjunto completo de etiquetas de entrenamiento. La recuperación de `etiquetas_vecinos` a partir de los índices ocurre antes de invocar `votacion_knn`
+
+`votacion_knn` es un operador interno previsto solo para el backend CUDA futuro y no es un contrato alternativo de `votacion_uniforme`. La función CPU `votacion_uniforme` recibe etiquetas originales sin codificación ni metadatos de clases adicionales
 
 Estos operadores son sin estado. Python conserva las referencias a los tensores de entrenamiento y etiquetas, y los pasa en cada llamada cuando corresponde
 
@@ -283,37 +289,37 @@ KNN-Cuda/
 │   ├── python/
 │   │   └── knn_cuda/
 │   │       ├── __init__.py       # API pública del paquete
-│   │       ├── classifier.py     # ClasificadorKNNCUDA y estado Python
-│   │       ├── _validation.py    # Validación de entradas y parámetros
-│   │       ├── _labels.py        # Codificación y decodificación de etiquetas
-│   │       ├── _ops.py           # Carga y encapsulado de operadores
-│   │       └── reference.py      # Referencia CPU en NumPy
+│   │       ├── clasificador.py   # ClasificadorKNNCUDA y estado Python
+│   │       ├── _validacion.py    # Validación de entradas y parámetros
+│   │       ├── _etiquetas.py     # Codificación y decodificación de etiquetas
+│   │       ├── _operaciones.py   # Carga y encapsulado de operadores
+│   │       └── referencia.py     # Referencia CPU en NumPy
 │   ├── cpp/
 │   │   ├── include/
 │   │   │   └── knn_cuda/
-│   │   │       └── ops.h         # Declaraciones de operadores
-│   │   └── knn_ops.cpp           # Registro y validación de operadores
+│   │   │       └── operaciones.h # Declaraciones de operadores
+│   │   └── operaciones_knn.cpp   # Registro y validación de operadores
 │   └── cuda/
 │       ├── include/
 │       │   └── knn_cuda/
 │       │       └── kernels.cuh   # Declaraciones de kernels
-│       ├── distance_kernel.cu    # Distancia euclidiana cuadrada
-│       ├── topk_kernel.cu        # Selección y fusión Top-K
-│       └── vote_kernel.cu        # Votación uniforme
+│       ├── distancias_kernel.cu       # Distancia euclidiana cuadrada
+│       ├── seleccion_top_k_kernel.cu  # Selección y fusión Top-K
+│       └── votacion_kernel.cu         # Votación uniforme
 ├── tests/
 │   ├── cpu/
-│   │   ├── test_reference.py     # Pruebas de la referencia NumPy
-│   │   ├── test_validation.py    # Pruebas de validación
-│   │   └── test_labels.py        # Pruebas de etiquetas
+│   │   ├── test_referencia.py    # Pruebas de la referencia NumPy
+│   │   ├── test_validacion.py    # Pruebas de validación
+│   │   └── test_etiquetas.py     # Pruebas de etiquetas
 │   └── cuda/
-│       ├── test_distance.py      # Pruebas de distancias
-│       ├── test_topk.py          # Pruebas de selección Top-K
-│       ├── test_vote.py          # Pruebas de votación
-│       └── test_classifier.py    # Pruebas del clasificador
+│       ├── test_distancias.py    # Pruebas de distancias
+│       ├── test_seleccion_top_k.py # Pruebas de selección Top-K
+│       ├── test_votacion.py      # Pruebas de votación
+│       └── test_clasificador.py  # Pruebas del clasificador
 ├── benchmarks/
-│   ├── benchmark_cpu.py          # Benchmarks de referencia CPU
-│   ├── benchmark_cuda.py         # Benchmarks CUDA
-│   └── configurations.py         # Configuraciones de benchmark
+│   ├── medicion_cpu.py           # Mediciones de referencia CPU
+│   ├── medicion_cuda.py          # Mediciones CUDA
+│   └── configuraciones.py        # Configuraciones de medición
 ├── data/                         # Datos pequeños o referencias reproducibles
 ├── docs/
 │   ├── architecture.md           # Arquitectura inicial

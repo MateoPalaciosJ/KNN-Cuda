@@ -39,3 +39,32 @@ def distancias_l2_cuadradas(
         diferencias * diferencias, axis=2, dtype=np.float32
     )
     return distancias_cuadradas
+
+
+def seleccionar_top_k(
+    distancias: np.ndarray, k: int
+) -> tuple[np.ndarray, np.ndarray]:
+    if not isinstance(distancias, np.ndarray):
+        raise TypeError("distancias debe ser un numpy.ndarray")
+    if not isinstance(k, (int, np.integer)) or isinstance(k, (bool, np.bool_)):
+        raise TypeError("k debe ser un entero")
+
+    if distancias.ndim != 2:
+        raise ValueError("distancias debe ser bidimensional")
+    if distancias.size == 0:
+        raise ValueError("distancias no debe estar vacia")
+    if distancias.dtype != np.float32:
+        raise TypeError("distancias debe tener dtype float32")
+    if not np.isfinite(distancias).all():
+        raise ValueError("distancias no debe contener NaN ni valores infinitos")
+    if k < 1:
+        raise ValueError("k debe ser mayor o igual a 1")
+    if k > distancias.shape[1]:
+        raise ValueError("k no debe ser mayor que el numero de columnas de distancias")
+
+    indices_ordenados = np.argsort(distancias, axis=1, kind="stable")
+    indices_seleccionados = indices_ordenados[:, :k].astype(np.int64, copy=False)
+    distancias_seleccionadas = np.take_along_axis(
+        distancias, indices_seleccionados, axis=1
+    )
+    return distancias_seleccionadas, indices_seleccionados

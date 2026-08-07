@@ -10,7 +10,9 @@
 
 ## 2. Convenciones del proyecto
 
-- Idioma del código: inglés.
+- El código propio del proyecto se escribe en español latinoamericano
+- Los identificadores propios se escriben sin tildes ni ñ
+- Los nombres externos y las APIs de terceros conservan su nombre original
 - Idioma de la documentación: español.
 - Commits siguiendo Conventional Commits.
 - snake_case para Python.

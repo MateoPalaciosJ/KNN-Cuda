@@ -148,7 +148,7 @@ Las reglas de orden y desempate son parte del contrato funcional:
 - Los vecinos se ordenan por distancia ascendente
 - Si dos vecinos tienen la misma distancia, se prioriza el menor índice de entrenamiento
 - Si dos o más etiquetas tienen el mismo número de votos, gana la etiqueta original menor
-- `classes_` se almacena ordenado
+- `clases_` se almacena ordenado
 - El comportamiento completo debe ser determinista bajo las mismas entradas y configuración
 
 El orden por índice debe aplicarse tanto al ordenar resultados finales como al fusionar candidatos parciales. No se debe depender de un orden incidental producido por el paralelismo de CUDA

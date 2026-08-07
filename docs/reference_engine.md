@@ -111,7 +111,7 @@ La función debe devolver las distancias en su forma cuadrada, porque la raíz c
 
 ### Entradas
 
-- `neighbor_labels` con forma `[Q, K]`
+- `etiquetas_vecinos` con forma `[Q, K]`
 - Etiquetas enteras
 - Clases originales ordenadas o una representación equivalente claramente definida
 
@@ -183,7 +183,7 @@ Validará que la matriz de distancias sea un `numpy.ndarray` bidimensional, no v
 
 ### `votacion_uniforme`
 
-Validará que `neighbor_labels` sea un arreglo bidimensional no vacío, que contenga etiquetas enteras, que el número de clases sea compatible con las etiquetas y que la representación de clases originales esté ordenada y sea inequívoca
+Validará que `etiquetas_vecinos` sea un arreglo bidimensional no vacío, que contenga etiquetas enteras, que el número de clases sea compatible con las etiquetas y que la representación de clases originales esté ordenada y sea inequívoca
 
 ### `predecir_knn`
 

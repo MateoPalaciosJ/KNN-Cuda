@@ -85,6 +85,22 @@ Los empates de `seleccionar_top_k` se resuelven preservando el menor índice ori
 
 No convierte tipos de forma silenciosa ni modifica los tensores de entrada
 
+## Pipeline KNN C++ CPU
+
+`predecir_knn` completa el pipeline KNN funcional interno en C++ CPU
+
+Recibe `datos_entrenamiento`, `etiquetas_entrenamiento`, `datos_consulta` y `k`, valida anticipadamente las etiquetas, su correspondencia con las muestras y el rango de `k` antes de calcular distancias
+
+Después reutiliza `distancias_l2_cuadradas`, `seleccionar_top_k` y `votacion_uniforme` sin reimplementar sus responsabilidades
+
+Las etiquetas de vecinos se obtienen mediante indexado de `etiquetas_entrenamiento` con `indices_seleccionados`
+
+La operación conserva los desempates deterministas de distancia y votación, prioriza la corrección sobre el rendimiento y se compara de forma integral con la referencia NumPy
+
+El pipeline C++ continúa siendo interno y `ClasificadorKNNCUDA` sigue utilizando la referencia NumPy
+
+No existe CUDA en esta fase y la futura implementación CUDA reutilizará el mismo esquema de operador
+
 ## Compilación
 
 La extensión se compila durante la instalación editable mediante `CppExtension` y las herramientas oficiales de extensiones C++ de PyTorch
@@ -101,11 +117,13 @@ La verificación completa ejecuta primero esas pruebas y después `python -m pyt
 
 `distancias_l2_cuadradas` ya está implementada en C++ CPU
 
-Todavía no está implementado el pipeline KNN completo en C++
+`seleccionar_top_k`, `votacion_uniforme` y `predecir_knn` ya están implementados en C++ CPU
 
 `ClasificadorKNNCUDA` todavía no utiliza el backend C++
 
 CUDA, kernels y GPU siguen pendientes
+
+El temporal conceptual `[Q, N, D]` de `distancias_l2_cuadradas` continúa siendo un riesgo de memoria pendiente para las fases de optimización y CUDA
 
 No existe una API pública adicional
 

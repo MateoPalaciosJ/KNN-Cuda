@@ -26,18 +26,25 @@ void validar_matriz(const torch::Tensor& matriz, const char* nombre) {
     TORCH_CHECK(torch::isfinite(matriz).all().item<bool>(), nombre, " debe contener valores finitos");
 }
 
-void validar_matriz_etiquetas(
-    const torch::Tensor& etiquetas_vecinos,
-    const char* nombre
+void validar_tensor_etiquetas(
+    const torch::Tensor& etiquetas,
+    const char* nombre,
+    int64_t numero_dimensiones,
+    const char* descripcion_dimensiones
 ) {
-    validar_tensor_cpu(etiquetas_vecinos, nombre);
+    validar_tensor_cpu(etiquetas, nombre);
     TORCH_CHECK(
-        c10::isIntegralType(etiquetas_vecinos.scalar_type(), false),
+        c10::isIntegralType(etiquetas.scalar_type(), false),
         nombre,
         " debe tener dtype entero"
     );
-    TORCH_CHECK(etiquetas_vecinos.dim() == 2, nombre, " debe ser bidimensional");
-    TORCH_CHECK(etiquetas_vecinos.numel() > 0, nombre, " no debe estar vacio");
+    TORCH_CHECK(
+        etiquetas.dim() == numero_dimensiones,
+        nombre,
+        " debe ser ",
+        descripcion_dimensiones
+    );
+    TORCH_CHECK(etiquetas.numel() > 0, nombre, " no debe estar vacio");
 }
 
 }
@@ -99,7 +106,9 @@ std::tuple<torch::Tensor, torch::Tensor> seleccionar_top_k(
 }
 
 torch::Tensor votacion_uniforme(const torch::Tensor& etiquetas_vecinos) {
-    validar_matriz_etiquetas(etiquetas_vecinos, "etiquetas_vecinos");
+    validar_tensor_etiquetas(
+        etiquetas_vecinos, "etiquetas_vecinos", 2, "bidimensional"
+    );
 
     auto predicciones = torch::empty(
         {etiquetas_vecinos.size(0)}, etiquetas_vecinos.options()
@@ -125,6 +134,39 @@ torch::Tensor votacion_uniforme(const torch::Tensor& etiquetas_vecinos) {
     }
 
     return predicciones;
+}
+
+torch::Tensor predecir_knn(
+    const torch::Tensor& datos_entrenamiento,
+    const torch::Tensor& etiquetas_entrenamiento,
+    const torch::Tensor& datos_consulta,
+    int64_t k
+) {
+    validar_tensor_etiquetas(
+        etiquetas_entrenamiento, "etiquetas_entrenamiento", 1, "unidimensional"
+    );
+    TORCH_CHECK(
+        datos_entrenamiento.dim() >= 1,
+        "datos_entrenamiento debe tener al menos una dimension"
+    );
+    TORCH_CHECK(
+        etiquetas_entrenamiento.size(0) == datos_entrenamiento.size(0),
+        "etiquetas_entrenamiento debe coincidir con las muestras de datos_entrenamiento"
+    );
+    TORCH_CHECK(k >= 1, "k debe ser mayor o igual a 1");
+    TORCH_CHECK(
+        k <= datos_entrenamiento.size(0),
+        "k no debe ser mayor que el numero de muestras de datos_entrenamiento"
+    );
+
+    const auto distancias = distancias_l2_cuadradas(
+        datos_consulta, datos_entrenamiento
+    );
+    const auto resultado_seleccion = seleccionar_top_k(distancias, k);
+    const auto& indices_seleccionados = std::get<1>(resultado_seleccion);
+    const auto etiquetas_vecinos = etiquetas_entrenamiento.index({indices_seleccionados});
+
+    return votacion_uniforme(etiquetas_vecinos);
 }
 
 }

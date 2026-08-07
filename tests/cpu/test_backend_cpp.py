@@ -7,6 +7,7 @@ import torch
 
 from knn_cuda.referencia import (
     distancias_l2_cuadradas,
+    predecir_knn,
     seleccionar_top_k,
     votacion_uniforme,
 )
@@ -712,3 +713,364 @@ def test_votacion_uniforme_rechaza_etiquetas_vacias() -> None:
 
     with pytest.raises(RuntimeError, match="etiquetas_vecinos"):
         torch.ops.knn_cuda.votacion_uniforme(etiquetas_vecinos)
+
+
+def test_predecir_knn_funciona_con_k_igual_a_uno_y_empate_de_distancias() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_entrenamiento = torch.tensor([[0.0], [2.0], [10.0]], dtype=torch.float32)
+    etiquetas_entrenamiento = torch.tensor([10, 20, 30], dtype=torch.int64)
+    datos_consulta = torch.tensor([[1.0]], dtype=torch.float32)
+    esperado = torch.tensor([10], dtype=torch.int64)
+
+    predicciones = torch.ops.knn_cuda.predecir_knn(
+        datos_entrenamiento, etiquetas_entrenamiento, datos_consulta, 1
+    )
+
+    assert torch.equal(predicciones, esperado)
+
+
+def test_predecir_knn_funciona_con_k_igual_a_n() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_entrenamiento = torch.tensor([[0.0], [2.0], [4.0]], dtype=torch.float32)
+    etiquetas_entrenamiento = torch.tensor([5, 2, 2], dtype=torch.int64)
+    datos_consulta = torch.tensor([[1.0]], dtype=torch.float32)
+    esperado = torch.tensor([2], dtype=torch.int64)
+
+    predicciones = torch.ops.knn_cuda.predecir_knn(
+        datos_entrenamiento, etiquetas_entrenamiento, datos_consulta, 3
+    )
+
+    assert torch.equal(predicciones, esperado)
+
+
+def test_predecir_knn_funciona_con_una_muestra_y_una_unica_clase() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_entrenamiento = torch.tensor([[4.0, 5.0]], dtype=torch.float32)
+    etiquetas_entrenamiento = torch.tensor([7], dtype=torch.int64)
+    datos_consulta = torch.tensor([[4.0, 5.0]], dtype=torch.float32)
+    esperado = torch.tensor([7], dtype=torch.int64)
+
+    predicciones = torch.ops.knn_cuda.predecir_knn(
+        datos_entrenamiento, etiquetas_entrenamiento, datos_consulta, 1
+    )
+
+    assert torch.equal(predicciones, esperado)
+
+
+def test_predecir_knn_clasifica_datos_binarios_con_varias_consultas() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_entrenamiento = torch.tensor(
+        [[0.0, 0.0], [10.0, 0.0], [0.0, 10.0]], dtype=torch.float32
+    )
+    etiquetas_entrenamiento = torch.tensor([0, 1, 1], dtype=torch.int64)
+    datos_consulta = torch.tensor([[1.0, 0.0], [9.0, 1.0]], dtype=torch.float32)
+    esperado = torch.tensor([0, 1], dtype=torch.int64)
+
+    predicciones = torch.ops.knn_cuda.predecir_knn(
+        datos_entrenamiento, etiquetas_entrenamiento, datos_consulta, 1
+    )
+
+    assert torch.equal(predicciones, esperado)
+
+
+def test_predecir_knn_clasifica_datos_multiclase_con_varias_caracteristicas() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_entrenamiento = torch.tensor(
+        [[0.0, 0.0, 0.0], [5.0, 0.0, 0.0], [0.0, 5.0, 0.0]],
+        dtype=torch.float32,
+    )
+    etiquetas_entrenamiento = torch.tensor([2, 5, 9], dtype=torch.int64)
+    datos_consulta = torch.tensor([[4.5, 0.0, 0.0], [0.0, 4.5, 0.0]], dtype=torch.float32)
+    esperado = torch.tensor([5, 9], dtype=torch.int64)
+
+    predicciones = torch.ops.knn_cuda.predecir_knn(
+        datos_entrenamiento, etiquetas_entrenamiento, datos_consulta, 1
+    )
+
+    assert torch.equal(predicciones, esperado)
+
+
+def test_predecir_knn_maneja_etiquetas_negativas_no_consecutivas_y_grandes() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_entrenamiento = torch.tensor([[0.0], [5.0], [10.0]], dtype=torch.float32)
+    etiquetas_entrenamiento = torch.tensor([-3, 100, 2_000_000], dtype=torch.int64)
+    datos_consulta = torch.tensor([[0.5], [9.0]], dtype=torch.float32)
+    esperado = torch.tensor([-3, 2_000_000], dtype=torch.int64)
+
+    predicciones = torch.ops.knn_cuda.predecir_knn(
+        datos_entrenamiento, etiquetas_entrenamiento, datos_consulta, 1
+    )
+
+    assert torch.equal(predicciones, esperado)
+
+
+def test_predecir_knn_resuelve_empate_de_votos_por_etiqueta_menor() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_entrenamiento = torch.tensor([[0.0], [1.0]], dtype=torch.float32)
+    etiquetas_entrenamiento = torch.tensor([5, 2], dtype=torch.int64)
+    datos_consulta = torch.tensor([[0.2]], dtype=torch.float32)
+    esperado = torch.tensor([2], dtype=torch.int64)
+
+    predicciones = torch.ops.knn_cuda.predecir_knn(
+        datos_entrenamiento, etiquetas_entrenamiento, datos_consulta, 2
+    )
+
+    assert torch.equal(predicciones, esperado)
+
+
+def test_predecir_knn_preserva_el_tipo_int32() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_entrenamiento = torch.tensor([[0.0], [2.0]], dtype=torch.float32)
+    etiquetas_entrenamiento = torch.tensor([2, 5], dtype=torch.int32)
+    datos_consulta = torch.tensor([[0.0]], dtype=torch.float32)
+
+    predicciones = torch.ops.knn_cuda.predecir_knn(
+        datos_entrenamiento, etiquetas_entrenamiento, datos_consulta, 1
+    )
+
+    assert predicciones.dtype == torch.int32
+    assert torch.equal(predicciones, torch.tensor([2], dtype=torch.int32))
+
+
+def test_predecir_knn_coincide_con_numpy_en_datos_binarios() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_entrenamiento_numpy = np.array([[0.0], [2.0], [10.0]], dtype=np.float32)
+    etiquetas_entrenamiento_numpy = np.array([0, 1, 1], dtype=np.int64)
+    datos_consulta_numpy = np.array([[0.1], [1.9], [9.0]], dtype=np.float32)
+    esperado = predecir_knn(
+        datos_entrenamiento_numpy,
+        etiquetas_entrenamiento_numpy,
+        datos_consulta_numpy,
+        1,
+    )
+
+    predicciones = torch.ops.knn_cuda.predecir_knn(
+        torch.from_numpy(datos_entrenamiento_numpy),
+        torch.from_numpy(etiquetas_entrenamiento_numpy),
+        torch.from_numpy(datos_consulta_numpy),
+        1,
+    )
+
+    np.testing.assert_array_equal(predicciones.numpy(), esperado)
+
+
+def test_predecir_knn_coincide_con_numpy_en_multiclase_y_k_mayor_que_uno() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_entrenamiento_numpy = np.array(
+        [[0.0, 0.0], [2.0, 0.0], [0.0, 2.0], [2.0, 2.0]], dtype=np.float32
+    )
+    etiquetas_entrenamiento_numpy = np.array([2, 5, 9, 5], dtype=np.int64)
+    datos_consulta_numpy = np.array([[1.8, 0.2], [0.1, 1.9]], dtype=np.float32)
+    esperado = predecir_knn(
+        datos_entrenamiento_numpy,
+        etiquetas_entrenamiento_numpy,
+        datos_consulta_numpy,
+        3,
+    )
+
+    predicciones = torch.ops.knn_cuda.predecir_knn(
+        torch.from_numpy(datos_entrenamiento_numpy),
+        torch.from_numpy(etiquetas_entrenamiento_numpy),
+        torch.from_numpy(datos_consulta_numpy),
+        3,
+    )
+
+    np.testing.assert_array_equal(predicciones.numpy(), esperado)
+
+
+def test_predecir_knn_coincide_con_numpy_en_empates_y_etiquetas_negativas() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_entrenamiento_numpy = np.array([[0.0], [2.0], [4.0]], dtype=np.float32)
+    etiquetas_entrenamiento_numpy = np.array([-3, 10, 2], dtype=np.int64)
+    datos_consulta_numpy = np.array([[1.0], [3.0]], dtype=np.float32)
+    esperado = predecir_knn(
+        datos_entrenamiento_numpy,
+        etiquetas_entrenamiento_numpy,
+        datos_consulta_numpy,
+        2,
+    )
+
+    predicciones = torch.ops.knn_cuda.predecir_knn(
+        torch.from_numpy(datos_entrenamiento_numpy),
+        torch.from_numpy(etiquetas_entrenamiento_numpy),
+        torch.from_numpy(datos_consulta_numpy),
+        2,
+    )
+
+    np.testing.assert_array_equal(predicciones.numpy(), esperado)
+
+
+def test_predecir_knn_acepta_vistas_no_contiguas() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_entrenamiento = torch.tensor(
+        [[0.0, 2.0, 100.0], [0.0, 0.0, 100.0]], dtype=torch.float32
+    ).transpose(0, 1)
+    etiquetas_entrenamiento = torch.tensor([0, 99, 1, 99, 2, 99], dtype=torch.int64)[::2]
+    datos_consulta = torch.tensor(
+        [[0.0, 2.0], [0.0, 0.0]], dtype=torch.float32
+    ).transpose(0, 1)
+    esperado = predecir_knn(
+        datos_entrenamiento.numpy(),
+        etiquetas_entrenamiento.numpy(),
+        datos_consulta.numpy(),
+        1,
+    )
+
+    predicciones = torch.ops.knn_cuda.predecir_knn(
+        datos_entrenamiento, etiquetas_entrenamiento, datos_consulta, 1
+    )
+
+    assert not datos_entrenamiento.is_contiguous()
+    assert not etiquetas_entrenamiento.is_contiguous()
+    assert not datos_consulta.is_contiguous()
+    np.testing.assert_array_equal(predicciones.numpy(), esperado)
+
+
+def test_predecir_knn_es_determinista_y_no_modifica_las_entradas() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_entrenamiento = torch.tensor([[0.0], [2.0], [4.0]], dtype=torch.float32)
+    etiquetas_entrenamiento = torch.tensor([5, 2, 2], dtype=torch.int64)
+    datos_consulta = torch.tensor([[1.0], [3.0]], dtype=torch.float32)
+    datos_entrenamiento_antes = datos_entrenamiento.clone()
+    etiquetas_entrenamiento_antes = etiquetas_entrenamiento.clone()
+    datos_consulta_antes = datos_consulta.clone()
+
+    primeras_predicciones = torch.ops.knn_cuda.predecir_knn(
+        datos_entrenamiento, etiquetas_entrenamiento, datos_consulta, 2
+    )
+    segundas_predicciones = torch.ops.knn_cuda.predecir_knn(
+        datos_entrenamiento, etiquetas_entrenamiento, datos_consulta, 2
+    )
+
+    assert torch.equal(primeras_predicciones, segundas_predicciones)
+    assert torch.equal(datos_entrenamiento, datos_entrenamiento_antes)
+    assert torch.equal(etiquetas_entrenamiento, etiquetas_entrenamiento_antes)
+    assert torch.equal(datos_consulta, datos_consulta_antes)
+
+
+def test_predecir_knn_rechaza_etiquetas_float() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_entrenamiento = torch.tensor([[0.0]], dtype=torch.float32)
+    etiquetas_entrenamiento = torch.tensor([1.0], dtype=torch.float32)
+    datos_consulta = torch.tensor([[0.0]], dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="etiquetas_entrenamiento"):
+        torch.ops.knn_cuda.predecir_knn(
+            datos_entrenamiento, etiquetas_entrenamiento, datos_consulta, 1
+        )
+
+
+def test_predecir_knn_rechaza_etiquetas_booleanas() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_entrenamiento = torch.tensor([[0.0]], dtype=torch.float32)
+    etiquetas_entrenamiento = torch.tensor([True], dtype=torch.bool)
+    datos_consulta = torch.tensor([[0.0]], dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="etiquetas_entrenamiento"):
+        torch.ops.knn_cuda.predecir_knn(
+            datos_entrenamiento, etiquetas_entrenamiento, datos_consulta, 1
+        )
+
+
+def test_predecir_knn_rechaza_etiquetas_no_unidimensionales() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_entrenamiento = torch.tensor([[0.0]], dtype=torch.float32)
+    etiquetas_entrenamiento = torch.tensor([[1]], dtype=torch.int64)
+    datos_consulta = torch.tensor([[0.0]], dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="etiquetas_entrenamiento"):
+        torch.ops.knn_cuda.predecir_knn(
+            datos_entrenamiento, etiquetas_entrenamiento, datos_consulta, 1
+        )
+
+
+def test_predecir_knn_rechaza_etiquetas_vacias() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_entrenamiento = torch.empty((0, 1), dtype=torch.float32)
+    etiquetas_entrenamiento = torch.empty((0,), dtype=torch.int64)
+    datos_consulta = torch.tensor([[0.0]], dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="etiquetas_entrenamiento"):
+        torch.ops.knn_cuda.predecir_knn(
+            datos_entrenamiento, etiquetas_entrenamiento, datos_consulta, 1
+        )
+
+
+def test_predecir_knn_rechaza_cantidad_incorrecta_de_etiquetas_antes_del_calculo() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_entrenamiento = torch.tensor([[0.0], [1.0]], dtype=torch.float32)
+    etiquetas_entrenamiento = torch.tensor([1], dtype=torch.int64)
+    datos_consulta = torch.tensor([[float("nan")]], dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="etiquetas_entrenamiento"):
+        torch.ops.knn_cuda.predecir_knn(
+            datos_entrenamiento, etiquetas_entrenamiento, datos_consulta, 1
+        )
+
+
+def test_predecir_knn_rechaza_k_invalido() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_entrenamiento = torch.tensor([[0.0]], dtype=torch.float32)
+    etiquetas_entrenamiento = torch.tensor([1], dtype=torch.int64)
+    datos_consulta = torch.tensor([[0.0]], dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="k"):
+        torch.ops.knn_cuda.predecir_knn(
+            datos_entrenamiento, etiquetas_entrenamiento, datos_consulta, 0
+        )
+    with pytest.raises(RuntimeError, match="k"):
+        torch.ops.knn_cuda.predecir_knn(
+            datos_entrenamiento, etiquetas_entrenamiento, datos_consulta, -1
+        )
+    with pytest.raises(RuntimeError, match="k"):
+        torch.ops.knn_cuda.predecir_knn(
+            datos_entrenamiento, etiquetas_entrenamiento, datos_consulta, 2
+        )
+
+
+def test_predecir_knn_propaga_error_por_datos_float64() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_entrenamiento = torch.tensor([[0.0]], dtype=torch.float64)
+    etiquetas_entrenamiento = torch.tensor([1], dtype=torch.int64)
+    datos_consulta = torch.tensor([[0.0]], dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="datos_entrenamiento"):
+        torch.ops.knn_cuda.predecir_knn(
+            datos_entrenamiento, etiquetas_entrenamiento, datos_consulta, 1
+        )
+
+
+def test_predecir_knn_propaga_error_por_nan() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_entrenamiento = torch.tensor([[0.0]], dtype=torch.float32)
+    etiquetas_entrenamiento = torch.tensor([1], dtype=torch.int64)
+    datos_consulta = torch.tensor([[float("nan")]], dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="datos_consulta"):
+        torch.ops.knn_cuda.predecir_knn(
+            datos_entrenamiento, etiquetas_entrenamiento, datos_consulta, 1
+        )
+
+
+def test_predecir_knn_propaga_error_por_infinito() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_entrenamiento = torch.tensor([[float("inf")]], dtype=torch.float32)
+    etiquetas_entrenamiento = torch.tensor([1], dtype=torch.int64)
+    datos_consulta = torch.tensor([[0.0]], dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="datos_entrenamiento"):
+        torch.ops.knn_cuda.predecir_knn(
+            datos_entrenamiento, etiquetas_entrenamiento, datos_consulta, 1
+        )
+
+
+def test_predecir_knn_propaga_error_por_caracteristicas_incompatibles() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    datos_entrenamiento = torch.tensor([[0.0, 1.0]], dtype=torch.float32)
+    etiquetas_entrenamiento = torch.tensor([1], dtype=torch.int64)
+    datos_consulta = torch.tensor([[0.0]], dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="misma cantidad de caracteristicas"):
+        torch.ops.knn_cuda.predecir_knn(
+            datos_entrenamiento, etiquetas_entrenamiento, datos_consulta, 1
+        )

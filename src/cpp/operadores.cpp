@@ -59,4 +59,25 @@ torch::Tensor distancias_l2_cuadradas(
     return (diferencias * diferencias).sum(2);
 }
 
+std::tuple<torch::Tensor, torch::Tensor> seleccionar_top_k(
+    const torch::Tensor& distancias,
+    int64_t k
+) {
+    validar_matriz(distancias, "distancias");
+    TORCH_CHECK(k >= 1, "k debe ser mayor o igual a 1");
+    TORCH_CHECK(
+        k <= distancias.size(1),
+        "k no debe ser mayor que el numero de columnas de distancias"
+    );
+
+    const auto resultado_ordenado = distancias.sort(true, 1, false);
+    const auto& distancias_ordenadas = std::get<0>(resultado_ordenado);
+    const auto& indices_ordenados = std::get<1>(resultado_ordenado);
+
+    return std::make_tuple(
+        distancias_ordenadas.narrow(1, 0, k),
+        indices_ordenados.narrow(1, 0, k)
+    );
+}
+
 }

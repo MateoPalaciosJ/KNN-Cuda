@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 import torch
 
-from knn_cuda.referencia import distancias_l2_cuadradas
+from knn_cuda.referencia import distancias_l2_cuadradas, seleccionar_top_k
 
 
 def test_backend_cpp_se_importa_como_extension_compilada() -> None:
@@ -300,3 +300,220 @@ def test_distancias_l2_cuadradas_rechaza_infinito() -> None:
         torch.ops.knn_cuda.distancias_l2_cuadradas(
             datos_consulta, datos_entrenamiento
         )
+
+
+def test_seleccionar_top_k_funciona_con_k_igual_a_uno() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    distancias = torch.tensor([[3.0, 1.0, 2.0], [4.0, 0.0, 5.0]], dtype=torch.float32)
+    distancias_esperadas = torch.tensor([[1.0], [0.0]], dtype=torch.float32)
+    indices_esperados = torch.tensor([[1], [1]], dtype=torch.int64)
+
+    distancias_seleccionadas, indices_seleccionados = torch.ops.knn_cuda.seleccionar_top_k(
+        distancias, 1
+    )
+
+    assert distancias_seleccionadas.shape == (2, 1)
+    assert indices_seleccionados.shape == (2, 1)
+    assert distancias_seleccionadas.dtype == torch.float32
+    assert indices_seleccionados.dtype == torch.int64
+    assert torch.equal(distancias_seleccionadas, distancias_esperadas)
+    assert torch.equal(indices_seleccionados, indices_esperados)
+
+
+def test_seleccionar_top_k_funciona_con_k_igual_a_n() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    distancias = torch.tensor([[2.0, 1.0, 3.0]], dtype=torch.float32)
+    distancias_esperadas = torch.tensor([[1.0, 2.0, 3.0]], dtype=torch.float32)
+    indices_esperados = torch.tensor([[1, 0, 2]], dtype=torch.int64)
+
+    distancias_seleccionadas, indices_seleccionados = torch.ops.knn_cuda.seleccionar_top_k(
+        distancias, 3
+    )
+
+    assert torch.equal(distancias_seleccionadas, distancias_esperadas)
+    assert torch.equal(indices_seleccionados, indices_esperados)
+
+
+def test_seleccionar_top_k_funciona_con_una_muestra() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    distancias = torch.tensor([[4.0], [1.0]], dtype=torch.float32)
+    distancias_esperadas = torch.tensor([[4.0], [1.0]], dtype=torch.float32)
+    indices_esperados = torch.tensor([[0], [0]], dtype=torch.int64)
+
+    distancias_seleccionadas, indices_seleccionados = torch.ops.knn_cuda.seleccionar_top_k(
+        distancias, 1
+    )
+
+    assert torch.equal(distancias_seleccionadas, distancias_esperadas)
+    assert torch.equal(indices_seleccionados, indices_esperados)
+
+
+def test_seleccionar_top_k_ordena_distancias_de_forma_ascendente() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    distancias = torch.tensor([[9.0, 1.0, 5.0, 3.0]], dtype=torch.float32)
+    distancias_esperadas = torch.tensor([[1.0, 3.0, 5.0]], dtype=torch.float32)
+    indices_esperados = torch.tensor([[1, 3, 2]], dtype=torch.int64)
+
+    distancias_seleccionadas, indices_seleccionados = torch.ops.knn_cuda.seleccionar_top_k(
+        distancias, 3
+    )
+
+    assert torch.equal(distancias_seleccionadas, distancias_esperadas)
+    assert torch.equal(indices_seleccionados, indices_esperados)
+
+
+def test_seleccionar_top_k_resuelve_empates_por_menor_indice() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    distancias = torch.tensor([[4.0, 1.0, 1.0, 3.0]], dtype=torch.float32)
+    distancias_esperadas = torch.tensor([[1.0, 1.0, 3.0]], dtype=torch.float32)
+    indices_esperados = torch.tensor([[1, 2, 3]], dtype=torch.int64)
+
+    distancias_seleccionadas, indices_seleccionados = torch.ops.knn_cuda.seleccionar_top_k(
+        distancias, 3
+    )
+
+    assert torch.equal(distancias_seleccionadas, distancias_esperadas)
+    assert torch.equal(indices_seleccionados, indices_esperados)
+
+
+def test_seleccionar_top_k_resuelve_multiples_empates_por_menor_indice() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    distancias = torch.tensor(
+        [[2.0, 1.0, 1.0, 2.0], [3.0, 3.0, 0.0, 0.0]], dtype=torch.float32
+    )
+    distancias_esperadas = torch.tensor(
+        [[1.0, 1.0, 2.0, 2.0], [0.0, 0.0, 3.0, 3.0]], dtype=torch.float32
+    )
+    indices_esperados = torch.tensor([[1, 2, 0, 3], [2, 3, 0, 1]], dtype=torch.int64)
+
+    distancias_seleccionadas, indices_seleccionados = torch.ops.knn_cuda.seleccionar_top_k(
+        distancias, 4
+    )
+
+    assert torch.equal(distancias_seleccionadas, distancias_esperadas)
+    assert torch.equal(indices_seleccionados, indices_esperados)
+
+
+def test_seleccionar_top_k_coincide_con_la_referencia_numpy() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    distancias_numpy = np.array(
+        [[5.0, 1.0, 1.0, 3.0], [2.0, 4.0, 0.0, 2.0]], dtype=np.float32
+    )
+    distancias_esperadas, indices_esperados = seleccionar_top_k(distancias_numpy, 3)
+    distancias = torch.from_numpy(distancias_numpy)
+
+    distancias_seleccionadas, indices_seleccionados = torch.ops.knn_cuda.seleccionar_top_k(
+        distancias, 3
+    )
+
+    np.testing.assert_array_equal(distancias_seleccionadas.numpy(), distancias_esperadas)
+    np.testing.assert_array_equal(indices_seleccionados.numpy(), indices_esperados)
+
+
+def test_seleccionar_top_k_acepta_vistas_no_contiguas() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    distancias = torch.tensor(
+        [[4.0, 2.0], [1.0, 5.0], [1.0, 0.0]], dtype=torch.float32
+    ).transpose(0, 1)
+    distancias_esperadas, indices_esperados = seleccionar_top_k(distancias.numpy(), 2)
+
+    distancias_seleccionadas, indices_seleccionados = torch.ops.knn_cuda.seleccionar_top_k(
+        distancias, 2
+    )
+
+    assert not distancias.is_contiguous()
+    np.testing.assert_array_equal(distancias_seleccionadas.numpy(), distancias_esperadas)
+    np.testing.assert_array_equal(indices_seleccionados.numpy(), indices_esperados)
+
+
+def test_seleccionar_top_k_es_determinista_y_no_modifica_las_distancias() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    distancias = torch.tensor([[2.0, 1.0, 1.0], [3.0, 0.0, 2.0]], dtype=torch.float32)
+    distancias_antes = distancias.clone()
+
+    primeras_salidas = torch.ops.knn_cuda.seleccionar_top_k(distancias, 2)
+    segundas_salidas = torch.ops.knn_cuda.seleccionar_top_k(distancias, 2)
+
+    assert torch.equal(primeras_salidas[0], segundas_salidas[0])
+    assert torch.equal(primeras_salidas[1], segundas_salidas[1])
+    assert torch.equal(distancias, distancias_antes)
+
+
+def test_seleccionar_top_k_rechaza_distancias_float64() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    distancias = torch.tensor([[1.0]], dtype=torch.float64)
+
+    with pytest.raises(RuntimeError, match="distancias"):
+        torch.ops.knn_cuda.seleccionar_top_k(distancias, 1)
+
+
+def test_seleccionar_top_k_rechaza_distancias_enteras() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    distancias = torch.tensor([[1]], dtype=torch.int64)
+
+    with pytest.raises(RuntimeError, match="distancias"):
+        torch.ops.knn_cuda.seleccionar_top_k(distancias, 1)
+
+
+def test_seleccionar_top_k_rechaza_distancias_unidimensionales() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    distancias = torch.tensor([1.0], dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="distancias"):
+        torch.ops.knn_cuda.seleccionar_top_k(distancias, 1)
+
+
+def test_seleccionar_top_k_rechaza_distancias_tridimensionales() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    distancias = torch.ones((1, 1, 1), dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="distancias"):
+        torch.ops.knn_cuda.seleccionar_top_k(distancias, 1)
+
+
+def test_seleccionar_top_k_rechaza_distancias_vacias() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    distancias = torch.empty((0, 1), dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="distancias"):
+        torch.ops.knn_cuda.seleccionar_top_k(distancias, 1)
+
+
+def test_seleccionar_top_k_rechaza_nan() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    distancias = torch.tensor([[float("nan")]], dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="distancias"):
+        torch.ops.knn_cuda.seleccionar_top_k(distancias, 1)
+
+
+def test_seleccionar_top_k_rechaza_infinito() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    distancias = torch.tensor([[float("inf")]], dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="distancias"):
+        torch.ops.knn_cuda.seleccionar_top_k(distancias, 1)
+
+
+def test_seleccionar_top_k_rechaza_k_igual_a_cero() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    distancias = torch.tensor([[1.0]], dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="k"):
+        torch.ops.knn_cuda.seleccionar_top_k(distancias, 0)
+
+
+def test_seleccionar_top_k_rechaza_k_negativo() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    distancias = torch.tensor([[1.0]], dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="k"):
+        torch.ops.knn_cuda.seleccionar_top_k(distancias, -1)
+
+
+def test_seleccionar_top_k_rechaza_k_mayor_que_n() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    distancias = torch.tensor([[1.0]], dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="k"):
+        torch.ops.knn_cuda.seleccionar_top_k(distancias, 2)

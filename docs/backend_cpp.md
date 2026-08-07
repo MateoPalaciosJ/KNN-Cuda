@@ -49,11 +49,27 @@ El esquema se define una sola vez y su implementación se registra para CPU, por
 
 No se han incorporado optimizaciones, bloques, paralelismo manual ni kernels CUDA
 
+`seleccionar_top_k` es la segunda operación KNN real implementada en C++ durante la Fase 2
+
+Recibe `distancias` con forma `[Q, N]` y un valor entero `k`, y devuelve `distancias_seleccionadas` `float32` e `indices_seleccionados` `int64`, ambos con forma `[Q, k]`
+
+La operación ordena cada fila de forma ascendente mediante una ordenación estable de ATen y conserva el índice original menor cuando existen distancias iguales
+
+La implementación se ejecuta solo en CPU, no requiere contigüidad y se compara con `seleccionar_top_k` de NumPy como referencia primaria
+
+CUDA permanece pendiente y podrá registrar su propia implementación bajo el mismo esquema
+
 ## Validaciones
 
 `sumar_vectores` rechaza tensores fuera de CPU, dtype distinto de `float32`, dimensiones distintas de una, tensores vacíos y longitudes diferentes
 
 `distancias_l2_cuadradas` rechaza tensores fuera de CPU, dtype distinto de `float32`, dimensiones distintas de dos, tensores vacíos, valores no finitos y cantidades de características diferentes
+
+`seleccionar_top_k` rechaza tensores fuera de CPU, dtype distinto de `float32`, tensores que no sean bidimensionales, tensores vacíos, valores `NaN`, valores infinitos, `k` menor que `1` y `k` mayor que el número de columnas
+
+`seleccionar_top_k` no convierte tipos silenciosamente, no modifica la matriz de distancias y no requiere contigüidad
+
+Los empates de `seleccionar_top_k` se resuelven preservando el menor índice original mediante ordenación estable
 
 No convierte tipos de forma silenciosa ni modifica los tensores de entrada
 
@@ -73,7 +89,7 @@ La verificación completa ejecuta primero esas pruebas y después `python -m pyt
 
 `distancias_l2_cuadradas` ya está implementada en C++ CPU
 
-Todavía no están implementadas `seleccionar_top_k`, `votacion_uniforme` ni el pipeline KNN completo en C++
+Todavía no están implementadas `votacion_uniforme` ni el pipeline KNN completo en C++
 
 `ClasificadorKNNCUDA` todavía no utiliza el backend C++
 

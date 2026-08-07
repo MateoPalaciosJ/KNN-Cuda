@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tuple>
+
 #include <torch/extension.h>
 
 namespace knn_cuda {
@@ -14,6 +16,11 @@ torch::Tensor sumar_vectores(
 torch::Tensor distancias_l2_cuadradas(
     const torch::Tensor& datos_consulta,
     const torch::Tensor& datos_entrenamiento
+);
+
+std::tuple<torch::Tensor, torch::Tensor> seleccionar_top_k(
+    const torch::Tensor& distancias,
+    int64_t k
 );
 
 }

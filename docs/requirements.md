@@ -26,6 +26,18 @@
 
 KNN-Cuda debe implementar un clasificador KNN exacto cuyo cálculo principal se ejecute en una GPU mediante CUDA. El motor debe exponer una interfaz sencilla desde Python para preparar los datos, consultar vecinos y obtener predicciones sin que el usuario tenga que gestionar directamente los detalles de C++ o CUDA.
 
+## 3.1 Integración nativa por fases
+
+La estrategia oficial de integración nativa utilizará las extensiones de PyTorch y el dispatcher de PyTorch como único puente entre Python y C++ o CUDA
+
+La Fase 2 utilizará PyTorch como interfaz de tensores, infraestructura de extensión nativa, registro de operadores y despacho hacia implementaciones C++ CPU sin utilizar GPU ni CUDA
+
+La Fase 3 incorporará implementaciones CUDA dentro de la misma arquitectura y conservará la API pública de `ClasificadorKNNCUDA`
+
+No se utilizará pybind11 como estrategia independiente ni existirán sistemas de binding paralelos
+
+La referencia CPU en NumPy seguirá siendo la fuente primaria de corrección mientras se validan los operadores nativos
+
 ## 4. Requisitos funcionales
 
 El sistema debe:

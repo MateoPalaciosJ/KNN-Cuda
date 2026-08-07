@@ -28,13 +28,19 @@ El estado del clasificador, incluyendo el conjunto de entrenamiento, las etiquet
 
 ## 2. Integración tecnológica
 
-La implementación utiliza una extensión C++/CUDA integrada con PyTorch. La extensión se compilará con `CUDAExtension` y expondrá operadores registrados mediante el dispatcher de PyTorch
+La estrategia nativa oficial utiliza la infraestructura de extensiones de PyTorch y operadores registrados mediante su dispatcher
+
+Durante la Fase 2, la extensión se compilará con `CppExtension` y expondrá operadores CPU sin utilizar CUDA ni GPU
+
+Durante la Fase 3, la misma arquitectura evolucionará a `CUDAExtension` para incorporar implementaciones CUDA sin reemplazar la ruta de integración ni modificar la API pública
+
+No se utilizará pybind11 como estrategia independiente ni existirá un segundo sistema de binding
 
 La división de responsabilidades será:
 
 - Python conserva el estado, valida las entradas públicas y coordina las llamadas
-- C++ valida las precondiciones críticas, recibe tensores y lanza las operaciones CUDA
-- CUDA ejecuta operaciones sin estado sobre los tensores proporcionados
+- C++ valida las precondiciones críticas, recibe tensores y ejecuta operadores CPU en la Fase 2 u operaciones CUDA en la Fase 3
+- CUDA ejecutará operaciones sin estado sobre los tensores proporcionados a partir de la Fase 3
 
 Los operadores C++/CUDA no conservarán estado entre invocaciones ni conocerán la instancia de `ClasificadorKNNCUDA`. Tampoco conocerán las etiquetas originales; trabajarán únicamente con tensores y etiquetas codificadas
 
@@ -206,10 +212,11 @@ Estos operadores son sin estado. Python conserva las referencias a los tensores 
 La implementación se desarrollará en etapas verificables:
 
 1. **Referencia CPU NumPy:** definir el comportamiento correcto, las formas, la ordenación y los desempates sin depender de CUDA
-2. **Matriz CUDA completa con Top-K temporal:** construir una versión sencilla que materialice temporalmente la matriz de distancias para validar la integración y los kernels
-3. **Top-K CUDA propio:** sustituir la selección temporal por una selección paralela de candidatos con reglas deterministas
-4. **Procesamiento por bloques:** introducir `tamano_lote_consultas` y `tamano_bloque_entrenamiento`, fusionar resultados parciales y eliminar la necesidad de la matriz completa `Q x N`
-5. **Optimización avanzada:** mejorar acceso a memoria, ocupación, uso de memoria compartida y organización de kernels únicamente cuando existan pruebas de corrección y benchmarks que justifiquen el cambio
+2. **Extensión C++ CPU de PyTorch:** registrar operadores propios, validar el intercambio Python → PyTorch → C++ y comparar sus salidas con la referencia NumPy sin utilizar CUDA
+3. **Matriz CUDA completa con selección temporal:** construir una versión sencilla que materialice temporalmente la matriz de distancias para validar la integración y los kernels
+4. **Selección CUDA propia:** sustituir la selección temporal por una selección paralela de candidatos con reglas deterministas
+5. **Procesamiento por bloques:** introducir `tamano_lote_consultas` y `tamano_bloque_entrenamiento`, fusionar resultados parciales y eliminar la necesidad de la matriz completa `Q x N`
+6. **Optimización avanzada:** mejorar acceso a memoria, ocupación, uso de memoria compartida y organización de kernels únicamente cuando existan pruebas de corrección y benchmarks que justifiquen el cambio
 
 La progresión mantiene una referencia funcional disponible en todas las etapas. El orden de prioridad es primero corrección y después rendimiento
 

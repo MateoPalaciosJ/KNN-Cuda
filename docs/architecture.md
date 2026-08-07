@@ -11,14 +11,17 @@ La prioridad inicial es obtener resultados correctos, reproducibles y comparable
 El flujo de ejecución previsto es:
 
 ```text
-Python → extensión C++ → kernels CUDA → GPU
+Python → PyTorch → extensión C++/CUDA → dispatcher de PyTorch → CPU o CUDA
 ```
 
-1. Python recibe o prepara los datos, configura los parámetros de KNN y expone una API de alto nivel.
-2. La extensión C++ recibe los arreglos y parámetros, valida sus propiedades y coordina la ejecución.
-3. La extensión lanza kernels CUDA con los datos y la configuración adecuados.
-4. La GPU calcula las distancias, identifica los vecinos más cercanos y produce las predicciones.
-5. El resultado vuelve desde la extensión C++ a Python en un formato utilizable para el usuario.
+1. Python recibe o prepara los datos, configura los parámetros de KNN y expone una API de alto nivel
+2. PyTorch proporciona la interfaz de tensores, la infraestructura de extensiones nativas y el dispatcher de operadores
+3. La extensión C++ recibe tensores y parámetros, valida sus propiedades y ejecuta la implementación disponible para el dispositivo
+4. Durante la Fase 2, los operadores se ejecutan únicamente en CPU mediante C++
+5. Durante la Fase 3, la misma arquitectura incorpora implementaciones CUDA y kernels para GPU
+6. El resultado vuelve a Python mediante PyTorch en un formato utilizable para el usuario
+
+No se utilizará pybind11 como estrategia independiente ni existirá un segundo sistema de binding
 
 ## 3. Responsabilidades de la capa Python
 
@@ -43,7 +46,7 @@ La capa Python no debe contener la lógica intensiva de cálculo de distancias. 
 - Sincronizar la ejecución cuando sea necesario antes de devolver resultados.
 - Mantener aislados los detalles de CUDA de la interfaz Python.
 
-La extensión C++ debe ser una capa de coordinación y seguridad. No debe duplicar innecesariamente la lógica numérica que corresponde a los kernels CUDA.
+La extensión C++ debe ser una capa de coordinación y seguridad. Durante la Fase 2 ejecutará operadores CPU y durante la Fase 3 coordinará las implementaciones CUDA sin cambiar la API pública
 
 ## 5. Responsabilidades de los kernels CUDA
 
@@ -57,6 +60,16 @@ Los kernels CUDA serán responsables del trabajo masivamente paralelo sobre la G
 - Dejar los resultados en buffers que la capa C++ pueda transferir de vuelta a Python.
 
 La primera implementación puede separar las fases de cálculo, selección y votación para facilitar la verificación. Las fusiones de kernels, el uso de memoria compartida y otras optimizaciones quedan para una etapa posterior.
+
+## 5.1 Integración nativa por fases
+
+La infraestructura oficial de extensiones utilizará PyTorch en todas las fases nativas
+
+La Fase 2 utilizará extensiones C++ de PyTorch para registrar operadores CPU, validar llamadas Python → PyTorch → C++ e intercambiar tensores sin utilizar GPU ni CUDA
+
+La Fase 3 extenderá esta misma infraestructura con implementaciones CUDA y despacho según el dispositivo, sin crear una segunda API pública ni sustituir la referencia NumPy como fuente primaria de corrección
+
+La compilación C++ de la Fase 2 utilizará `CppExtension` y la Fase 3 evolucionará a `CUDAExtension` cuando se incorporen fuentes CUDA
 
 ## 6. Estrategia de validación
 

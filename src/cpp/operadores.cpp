@@ -4,8 +4,12 @@
 
 namespace {
 
-void validar_tensor_cpu_float32(const torch::Tensor& tensor, const char* nombre) {
+void validar_tensor_cpu(const torch::Tensor& tensor, const char* nombre) {
     TORCH_CHECK(tensor.device().is_cpu(), nombre, " debe estar en CPU");
+}
+
+void validar_tensor_cpu_float32(const torch::Tensor& tensor, const char* nombre) {
+    validar_tensor_cpu(tensor, nombre);
     TORCH_CHECK(tensor.scalar_type() == torch::kFloat32, nombre, " debe tener dtype float32");
 }
 
@@ -20,6 +24,20 @@ void validar_matriz(const torch::Tensor& matriz, const char* nombre) {
     TORCH_CHECK(matriz.dim() == 2, nombre, " debe ser bidimensional");
     TORCH_CHECK(matriz.numel() > 0, nombre, " no debe estar vacio");
     TORCH_CHECK(torch::isfinite(matriz).all().item<bool>(), nombre, " debe contener valores finitos");
+}
+
+void validar_matriz_etiquetas(
+    const torch::Tensor& etiquetas_vecinos,
+    const char* nombre
+) {
+    validar_tensor_cpu(etiquetas_vecinos, nombre);
+    TORCH_CHECK(
+        c10::isIntegralType(etiquetas_vecinos.scalar_type(), false),
+        nombre,
+        " debe tener dtype entero"
+    );
+    TORCH_CHECK(etiquetas_vecinos.dim() == 2, nombre, " debe ser bidimensional");
+    TORCH_CHECK(etiquetas_vecinos.numel() > 0, nombre, " no debe estar vacio");
 }
 
 }
@@ -78,6 +96,35 @@ std::tuple<torch::Tensor, torch::Tensor> seleccionar_top_k(
         distancias_ordenadas.narrow(1, 0, k),
         indices_ordenados.narrow(1, 0, k)
     );
+}
+
+torch::Tensor votacion_uniforme(const torch::Tensor& etiquetas_vecinos) {
+    validar_matriz_etiquetas(etiquetas_vecinos, "etiquetas_vecinos");
+
+    auto predicciones = torch::empty(
+        {etiquetas_vecinos.size(0)}, etiquetas_vecinos.options()
+    );
+
+    for (int64_t indice_consulta = 0;
+         indice_consulta < etiquetas_vecinos.size(0);
+         ++indice_consulta) {
+        const auto etiquetas_consulta = etiquetas_vecinos.select(0, indice_consulta);
+        const auto etiquetas_ordenadas = std::get<0>(
+            etiquetas_consulta.sort(true, 0, false)
+        );
+        const auto resultado_unico = torch::unique_consecutive(
+            etiquetas_ordenadas, false, true
+        );
+        const auto& etiquetas_distintas = std::get<0>(resultado_unico);
+        const auto& conteos = std::get<2>(resultado_unico);
+        const auto indice_ganador = conteos.argmax();
+
+        predicciones.select(0, indice_consulta).copy_(
+            etiquetas_distintas.index({indice_ganador})
+        );
+    }
+
+    return predicciones;
 }
 
 }

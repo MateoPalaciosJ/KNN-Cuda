@@ -5,7 +5,11 @@ import numpy as np
 import pytest
 import torch
 
-from knn_cuda.referencia import distancias_l2_cuadradas, seleccionar_top_k
+from knn_cuda.referencia import (
+    distancias_l2_cuadradas,
+    seleccionar_top_k,
+    votacion_uniforme,
+)
 
 
 def test_backend_cpp_se_importa_como_extension_compilada() -> None:
@@ -517,3 +521,194 @@ def test_seleccionar_top_k_rechaza_k_mayor_que_n() -> None:
 
     with pytest.raises(RuntimeError, match="k"):
         torch.ops.knn_cuda.seleccionar_top_k(distancias, 2)
+
+
+def test_votacion_uniforme_devuelve_forma_y_tipo_int64() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    etiquetas_vecinos = torch.tensor([[5, 2, 5], [3, 4, 4]], dtype=torch.int64)
+    esperado = torch.tensor([5, 4], dtype=torch.int64)
+
+    predicciones = torch.ops.knn_cuda.votacion_uniforme(etiquetas_vecinos)
+
+    assert predicciones.shape == (2,)
+    assert predicciones.dtype == torch.int64
+    assert torch.equal(predicciones, esperado)
+
+
+def test_votacion_uniforme_funciona_con_k_igual_a_uno() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    etiquetas_vecinos = torch.tensor([[7], [-3]], dtype=torch.int64)
+    esperado = torch.tensor([7, -3], dtype=torch.int64)
+
+    predicciones = torch.ops.knn_cuda.votacion_uniforme(etiquetas_vecinos)
+
+    assert torch.equal(predicciones, esperado)
+
+
+def test_votacion_uniforme_funciona_con_una_unica_clase() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    etiquetas_vecinos = torch.tensor([[7, 7, 7]], dtype=torch.int64)
+    esperado = torch.tensor([7], dtype=torch.int64)
+
+    predicciones = torch.ops.knn_cuda.votacion_uniforme(etiquetas_vecinos)
+
+    assert torch.equal(predicciones, esperado)
+
+
+def test_votacion_uniforme_clasifica_etiquetas_binarias() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    etiquetas_vecinos = torch.tensor([[0, 1, 1], [0, 0, 1]], dtype=torch.int64)
+    esperado = torch.tensor([1, 0], dtype=torch.int64)
+
+    predicciones = torch.ops.knn_cuda.votacion_uniforme(etiquetas_vecinos)
+
+    assert torch.equal(predicciones, esperado)
+
+
+def test_votacion_uniforme_clasifica_etiquetas_multiclase() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    etiquetas_vecinos = torch.tensor([[3, 5, 5, 9, 5]], dtype=torch.int64)
+    esperado = torch.tensor([5], dtype=torch.int64)
+
+    predicciones = torch.ops.knn_cuda.votacion_uniforme(etiquetas_vecinos)
+
+    assert torch.equal(predicciones, esperado)
+
+
+def test_votacion_uniforme_maneja_etiquetas_negativas_y_no_consecutivas() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    etiquetas_vecinos = torch.tensor([[-3, 10, -3], [100, 200, 100]], dtype=torch.int64)
+    esperado = torch.tensor([-3, 100], dtype=torch.int64)
+
+    predicciones = torch.ops.knn_cuda.votacion_uniforme(etiquetas_vecinos)
+
+    assert torch.equal(predicciones, esperado)
+
+
+def test_votacion_uniforme_maneja_etiquetas_grandes() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    etiquetas_vecinos = torch.tensor(
+        [[1_000_000, 2_000_000, 2_000_000]], dtype=torch.int64
+    )
+    esperado = torch.tensor([2_000_000], dtype=torch.int64)
+
+    predicciones = torch.ops.knn_cuda.votacion_uniforme(etiquetas_vecinos)
+
+    assert torch.equal(predicciones, esperado)
+
+
+def test_votacion_uniforme_resuelve_empate_entre_dos_clases() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    etiquetas_vecinos = torch.tensor([[5, 2]], dtype=torch.int64)
+    esperado = torch.tensor([2], dtype=torch.int64)
+
+    predicciones = torch.ops.knn_cuda.votacion_uniforme(etiquetas_vecinos)
+
+    assert torch.equal(predicciones, esperado)
+
+
+def test_votacion_uniforme_resuelve_empate_entre_tres_clases() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    etiquetas_vecinos = torch.tensor([[9, 5, 2]], dtype=torch.int64)
+    esperado = torch.tensor([2], dtype=torch.int64)
+
+    predicciones = torch.ops.knn_cuda.votacion_uniforme(etiquetas_vecinos)
+
+    assert torch.equal(predicciones, esperado)
+
+
+def test_votacion_uniforme_preserva_el_tipo_int32() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    etiquetas_vecinos = torch.tensor([[2, 2, 5]], dtype=torch.int32)
+    esperado = torch.tensor([2], dtype=torch.int32)
+
+    predicciones = torch.ops.knn_cuda.votacion_uniforme(etiquetas_vecinos)
+
+    assert predicciones.dtype == torch.int32
+    assert torch.equal(predicciones, esperado)
+
+
+def test_votacion_uniforme_coincide_con_la_referencia_numpy() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    etiquetas_vecinos_numpy = np.array(
+        [[5, 2, 5], [9, 5, 2], [-3, 10, -3]], dtype=np.int64
+    )
+    esperado = votacion_uniforme(etiquetas_vecinos_numpy)
+    etiquetas_vecinos = torch.from_numpy(etiquetas_vecinos_numpy)
+
+    predicciones = torch.ops.knn_cuda.votacion_uniforme(etiquetas_vecinos)
+
+    np.testing.assert_array_equal(predicciones.numpy(), esperado)
+
+
+def test_votacion_uniforme_acepta_vistas_no_contiguas() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    etiquetas_vecinos = torch.tensor(
+        [[5, 2], [2, 5], [5, 2]], dtype=torch.int64
+    ).transpose(0, 1)
+    esperado = votacion_uniforme(etiquetas_vecinos.numpy())
+
+    predicciones = torch.ops.knn_cuda.votacion_uniforme(etiquetas_vecinos)
+
+    assert not etiquetas_vecinos.is_contiguous()
+    np.testing.assert_array_equal(predicciones.numpy(), esperado)
+
+
+def test_votacion_uniforme_es_determinista_y_no_modifica_las_etiquetas() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    etiquetas_vecinos = torch.tensor([[5, 2, 2], [3, 3, 1]], dtype=torch.int64)
+    etiquetas_vecinos_antes = etiquetas_vecinos.clone()
+
+    primeras_predicciones = torch.ops.knn_cuda.votacion_uniforme(etiquetas_vecinos)
+    segundas_predicciones = torch.ops.knn_cuda.votacion_uniforme(etiquetas_vecinos)
+
+    assert torch.equal(primeras_predicciones, segundas_predicciones)
+    assert torch.equal(etiquetas_vecinos, etiquetas_vecinos_antes)
+
+
+def test_votacion_uniforme_rechaza_etiquetas_float32() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    etiquetas_vecinos = torch.tensor([[1.0]], dtype=torch.float32)
+
+    with pytest.raises(RuntimeError, match="etiquetas_vecinos"):
+        torch.ops.knn_cuda.votacion_uniforme(etiquetas_vecinos)
+
+
+def test_votacion_uniforme_rechaza_etiquetas_float64() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    etiquetas_vecinos = torch.tensor([[1.0]], dtype=torch.float64)
+
+    with pytest.raises(RuntimeError, match="etiquetas_vecinos"):
+        torch.ops.knn_cuda.votacion_uniforme(etiquetas_vecinos)
+
+
+def test_votacion_uniforme_rechaza_etiquetas_booleanas() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    etiquetas_vecinos = torch.tensor([[True]], dtype=torch.bool)
+
+    with pytest.raises(RuntimeError, match="etiquetas_vecinos"):
+        torch.ops.knn_cuda.votacion_uniforme(etiquetas_vecinos)
+
+
+def test_votacion_uniforme_rechaza_etiquetas_unidimensionales() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    etiquetas_vecinos = torch.tensor([1], dtype=torch.int64)
+
+    with pytest.raises(RuntimeError, match="etiquetas_vecinos"):
+        torch.ops.knn_cuda.votacion_uniforme(etiquetas_vecinos)
+
+
+def test_votacion_uniforme_rechaza_etiquetas_tridimensionales() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    etiquetas_vecinos = torch.ones((1, 1, 1), dtype=torch.int64)
+
+    with pytest.raises(RuntimeError, match="etiquetas_vecinos"):
+        torch.ops.knn_cuda.votacion_uniforme(etiquetas_vecinos)
+
+
+def test_votacion_uniforme_rechaza_etiquetas_vacias() -> None:
+    importlib.import_module("knn_cuda._backend_cpp")
+    etiquetas_vecinos = torch.empty((0, 1), dtype=torch.int64)
+
+    with pytest.raises(RuntimeError, match="etiquetas_vecinos"):
+        torch.ops.knn_cuda.votacion_uniforme(etiquetas_vecinos)

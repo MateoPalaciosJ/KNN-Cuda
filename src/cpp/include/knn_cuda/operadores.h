@@ -23,4 +23,6 @@ std::tuple<torch::Tensor, torch::Tensor> seleccionar_top_k(
     int64_t k
 );
 
+torch::Tensor votacion_uniforme(const torch::Tensor& etiquetas_vecinos);
+
 }

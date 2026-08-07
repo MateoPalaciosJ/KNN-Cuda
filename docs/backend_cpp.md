@@ -59,6 +59,14 @@ La implementación se ejecuta solo en CPU, no requiere contigüidad y se compara
 
 CUDA permanece pendiente y podrá registrar su propia implementación bajo el mismo esquema
 
+`votacion_uniforme` es la tercera operación KNN real implementada en C++ durante la Fase 2
+
+Recibe directamente `etiquetas_vecinos` originales con forma `[Q, K]`, aplica un voto por vecino y devuelve una predicción por consulta con el mismo dtype entero de entrada
+
+La operación ordena las etiquetas de cada consulta, cuenta sus valores distintos y resuelve los empates por la etiqueta original numéricamente menor
+
+NumPy sigue siendo la referencia primaria y CPU es el único backend implementado mientras CUDA permanece pendiente
+
 ## Validaciones
 
 `sumar_vectores` rechaza tensores fuera de CPU, dtype distinto de `float32`, dimensiones distintas de una, tensores vacíos y longitudes diferentes
@@ -70,6 +78,10 @@ CUDA permanece pendiente y podrá registrar su propia implementación bajo el mi
 `seleccionar_top_k` no convierte tipos silenciosamente, no modifica la matriz de distancias y no requiere contigüidad
 
 Los empates de `seleccionar_top_k` se resuelven preservando el menor índice original mediante ordenación estable
+
+`votacion_uniforme` rechaza tensores fuera de CPU, tensores que no sean bidimensionales, tensores vacíos, dtype no entero y dtype booleano
+
+`votacion_uniforme` no convierte tipos silenciosamente, no modifica `etiquetas_vecinos` y no requiere contigüidad
 
 No convierte tipos de forma silenciosa ni modifica los tensores de entrada
 
@@ -89,7 +101,7 @@ La verificación completa ejecuta primero esas pruebas y después `python -m pyt
 
 `distancias_l2_cuadradas` ya está implementada en C++ CPU
 
-Todavía no están implementadas `votacion_uniforme` ni el pipeline KNN completo en C++
+Todavía no está implementado el pipeline KNN completo en C++
 
 `ClasificadorKNNCUDA` todavía no utiliza el backend C++
 

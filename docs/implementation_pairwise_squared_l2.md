@@ -329,6 +329,6 @@ La implementación debe permanecer como una referencia CPU directa y comprensibl
 
 Esta implementación define el comportamiento oficial de pairwise_squared_l2
 
-Cualquier implementación posterior, incluyendo CUDA, deberá producir exactamente el mismo resultado dentro de las tolerancias numéricas establecidas
+Cualquier implementación p  osterior, incluyendo CUDA, deberá producir exactamente el mismo resultado dentro de las tolerancias numéricas establecidas
 
 Las optimizaciones futuras no podrán modificar el contrato, la forma de la salida ni las reglas definidas en este documento

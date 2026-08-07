@@ -68,3 +68,56 @@ def seleccionar_top_k(
         distancias, indices_seleccionados, axis=1
     )
     return distancias_seleccionadas, indices_seleccionados
+
+
+def votacion_uniforme(etiquetas_vecinos: np.ndarray) -> np.ndarray:
+    if not isinstance(etiquetas_vecinos, np.ndarray):
+        raise TypeError("etiquetas_vecinos debe ser un numpy.ndarray")
+    if etiquetas_vecinos.ndim != 2:
+        raise ValueError("etiquetas_vecinos debe ser bidimensional")
+    if etiquetas_vecinos.size == 0:
+        raise ValueError("etiquetas_vecinos no debe estar vacio")
+    if not np.issubdtype(etiquetas_vecinos.dtype, np.integer) or np.issubdtype(
+        etiquetas_vecinos.dtype, np.bool_
+    ):
+        raise TypeError("etiquetas_vecinos debe tener dtype entero")
+
+    predicciones = np.empty(
+        etiquetas_vecinos.shape[0], dtype=etiquetas_vecinos.dtype
+    )
+    for indice_consulta, etiquetas_consulta in enumerate(etiquetas_vecinos):
+        etiquetas_distintas, conteos = np.unique(
+            etiquetas_consulta, return_counts=True
+        )
+        conteo_maximo = conteos.max()
+        etiquetas_ganadoras = etiquetas_distintas[conteos == conteo_maximo]
+        predicciones[indice_consulta] = etiquetas_ganadoras.min()
+    return predicciones
+
+
+def predecir_knn(
+    datos_entrenamiento: np.ndarray,
+    etiquetas_entrenamiento: np.ndarray,
+    datos_consulta: np.ndarray,
+    k: int,
+) -> np.ndarray:
+    if not isinstance(etiquetas_entrenamiento, np.ndarray):
+        raise TypeError("etiquetas_entrenamiento debe ser un numpy.ndarray")
+    if etiquetas_entrenamiento.ndim != 1:
+        raise ValueError("etiquetas_entrenamiento debe ser unidimensional")
+    if etiquetas_entrenamiento.size == 0:
+        raise ValueError("etiquetas_entrenamiento no debe estar vacio")
+    if not np.issubdtype(etiquetas_entrenamiento.dtype, np.integer) or np.issubdtype(
+        etiquetas_entrenamiento.dtype, np.bool_
+    ):
+        raise TypeError("etiquetas_entrenamiento debe tener dtype entero")
+
+    if etiquetas_entrenamiento.shape[0] != datos_entrenamiento.shape[0]:
+        raise ValueError(
+            "etiquetas_entrenamiento debe coincidir con las muestras de datos_entrenamiento"
+        )
+
+    distancias = distancias_l2_cuadradas(datos_consulta, datos_entrenamiento)
+    _, indices_seleccionados = seleccionar_top_k(distancias, k)
+    etiquetas_vecinos = etiquetas_entrenamiento[indices_seleccionados]
+    return votacion_uniforme(etiquetas_vecinos)

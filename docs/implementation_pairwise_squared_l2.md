@@ -1,8 +1,8 @@
-# Implementación de pairwise_squared_l2
+# Implementación de distancias_l2_cuadradas
 
 ## 1  Objetivo
 
-`pairwise_squared_l2` será la implementación CPU de referencia para calcular distancias euclidianas cuadradas entre un lote de consultas y el conjunto de entrenamiento
+`distancias_l2_cuadradas` será la implementación CPU de referencia para calcular distancias euclidianas cuadradas entre un lote de consultas y el conjunto de entrenamiento
 
 Su prioridad será la corrección, el determinismo, la claridad y la facilidad de validación. No busca un rendimiento competitivo ni debe incorporar decisiones de optimización que dificulten la revisión de la lógica
 
@@ -12,10 +12,10 @@ La función formará parte de la fuente primaria de verdad del motor CPU de refe
 
 ### Entradas
 
-- `X_query` como `numpy.ndarray`
+- `datos_consulta` como `numpy.ndarray`
 - Forma `[Q, D]`
 - Tipo `float32`
-- `X_train` como `numpy.ndarray`
+- `datos_entrenamiento` como `numpy.ndarray`
 - Forma `[N, D]`
 - Tipo `float32`
 - Ambos arreglos bidimensionales
@@ -29,7 +29,7 @@ La función formará parte de la fuente primaria de verdad del motor CPU de refe
 - `numpy.ndarray`
 - Forma `[Q, N]`
 - Tipo `float32`
-- Cada posición `[q, n]` contiene la distancia euclidiana cuadrada entre `X_query[q]` y `X_train[n]`
+- Cada posición `[q, n]` contiene la distancia euclidiana cuadrada entre `datos_consulta[q]` y `datos_entrenamiento[n]`
 
 ### Responsabilidad
 
@@ -42,8 +42,8 @@ Calcular únicamente la matriz de distancias euclidianas cuadradas
 - Aplicar raíz cuadrada
 - Conocer etiquetas
 - Realizar votación
-- Modificar `X_query`
-- Modificar `X_train`
+- Modificar `datos_consulta`
+- Modificar `datos_entrenamiento`
 - Depender de estado externo
 
 La función debe recibir todos los datos necesarios mediante sus entradas y producir la salida exclusivamente a partir de ellos
@@ -87,7 +87,7 @@ La razón es mantener una correspondencia directa con la definición matemática
 
 El flujo conceptual será:
 
-1. Recibir `X_query` y `X_train` ya validados
+1. Recibir `datos_consulta` y `datos_entrenamiento` ya validados
 2. Expandir las dimensiones de forma que NumPy pueda comparar cada consulta contra cada muestra de entrenamiento mediante broadcasting
 3. Obtener las diferencias por característica
 4. Elevar cada diferencia al cuadrado
@@ -102,7 +102,7 @@ La función no debe ordenar las muestras ni realizar ninguna operación propia d
 
 Las formas intermedias se interpretarán conceptualmente de la siguiente manera:
 
-`X_query`
+`datos_consulta`
 
 `[Q, D]`
 
@@ -110,7 +110,7 @@ Se interpreta para broadcasting como:
 
 `[Q, 1, D]`
 
-`X_train`
+`datos_entrenamiento`
 
 `[N, D]`
 
@@ -132,7 +132,7 @@ Las dimensiones representan:
 - `N`: número de muestras de entrenamiento
 - `D`: número de características
 
-La dimensión `Q` conserva el orden de `X_query`, la dimensión `N` conserva el orden de `X_train` y la dimensión `D` contiene las diferencias por característica antes de la suma
+La dimensión `Q` conserva el orden de `datos_consulta`, la dimensión `N` conserva el orden de `datos_entrenamiento` y la dimensión `D` contiene las diferencias por característica antes de la suma
 
 ## 7  Tipos y precisión
 
@@ -168,32 +168,32 @@ La implementación CUDA final no tendrá esta misma estrategia de memoria. El do
 
 La implementación debe mantener estos invariantes:
 
-- `X_query` no se modifica
-- `X_train` no se modifica
+- `datos_consulta` no se modifica
+- `datos_entrenamiento` no se modifica
 - La salida siempre es bidimensional
 - La salida tiene forma `[Q, N]`
 - La salida tiene tipo `float32`
 - Todas las distancias son mayores o iguales a cero, salvo pequeñas diferencias numéricas inesperadas que deberán investigarse
 - Si una consulta es exactamente igual a una muestra de entrenamiento, su distancia debe ser cero
 - Las mismas entradas producen la misma salida
-- El orden de filas corresponde al orden original de `X_query`
-- El orden de columnas corresponde al orden original de `X_train`
+- El orden de filas corresponde al orden original de `datos_consulta`
+- El orden de columnas corresponde al orden original de `datos_entrenamiento`
 
 Estos invariantes deben comprobarse mediante pruebas o inspección de resultados, no asumirse únicamente por la forma de la operación
 
 ## 10  Validaciones
 
-`pairwise_squared_l2` debe validar directamente:
+`distancias_l2_cuadradas` debe validar directamente:
 
-- Que `X_query` sea `numpy.ndarray`
-- Que `X_train` sea `numpy.ndarray`
-- Que `X_query.ndim == 2`
-- Que `X_train.ndim == 2`
-- Que `X_query` no esté vacío
-- Que `X_train` no esté vacío
-- Que `X_query.dtype == float32`
-- Que `X_train.dtype == float32`
-- Que `X_query.shape[1] == X_train.shape[1]`
+- Que `datos_consulta` sea `numpy.ndarray`
+- Que `datos_entrenamiento` sea `numpy.ndarray`
+- Que `datos_consulta.ndim == 2`
+- Que `datos_entrenamiento.ndim == 2`
+- Que `datos_consulta` no esté vacío
+- Que `datos_entrenamiento` no esté vacío
+- Que `datos_consulta.dtype == float32`
+- Que `datos_entrenamiento.dtype == float32`
+- Que `datos_consulta.shape[1] == datos_entrenamiento.shape[1]`
 - Que no existan valores `NaN`
 - Que no existan valores infinitos
 
@@ -201,7 +201,7 @@ Los errores deben indicar claramente qué condición no se cumplió y, cuando se
 
 No se agregará un sistema complejo de excepciones personalizadas. Se utilizarán las excepciones estándar de Python cuando corresponda, con mensajes suficientemente claros para identificar el problema
 
-La validación pertenece a esta función porque forma parte de su contrato público. No debe trasladarse a `knn_predict` dejando a `pairwise_squared_l2` sin protección cuando se invoque directamente
+La validación pertenece a esta función porque forma parte de su contrato público. No debe trasladarse a `predecir_knn` dejando a `distancias_l2_cuadradas` sin protección cuando se invoque directamente
 
 ## 11  Casos límite
 
@@ -254,8 +254,8 @@ Como mínimo, deben existir las siguientes pruebas
 
 ### Inmutabilidad
 
-- Verificar que `X_query` no cambia
-- Verificar que `X_train` no cambia
+- Verificar que `datos_consulta` no cambia
+- Verificar que `datos_entrenamiento` no cambia
 
 ### Determinismo
 
@@ -263,8 +263,8 @@ Como mínimo, deben existir las siguientes pruebas
 
 ### Errores
 
-- `X_query` no es `numpy.ndarray`
-- `X_train` no es `numpy.ndarray`
+- `datos_consulta` no es `numpy.ndarray`
+- `datos_entrenamiento` no es `numpy.ndarray`
 - Entrada unidimensional
 - Entrada tridimensional
 - Arreglo vacío
@@ -286,7 +286,7 @@ La comparación manual debe cubrir al menos un caso pequeño en el que sea posib
 
 ## 14  Criterios de aceptación
 
-La implementación futura de `pairwise_squared_l2` se considerará aprobada cuando:
+La implementación futura de `distancias_l2_cuadradas` se considerará aprobada cuando:
 
 - Respete exactamente su contrato
 - Todas las pruebas pasen
@@ -320,14 +320,14 @@ La revisión debe confirmar además que cada validación pertenece a esta funci�
 - No introducir caché
 - No cambiar el contrato definido en `reference_engine.md`
 
-El documento deja definido el comportamiento de `pairwise_squared_l2` sin decisiones pendientes sobre sus entradas, su salida, su cálculo, sus validaciones o sus pruebas
+El documento deja definido el comportamiento de `distancias_l2_cuadradas` sin decisiones pendientes sobre sus entradas, su salida, su cálculo, sus validaciones o sus pruebas
 
 La implementación debe permanecer como una referencia CPU directa y comprensible para las fases posteriores
 
 
 ## 16 Compatibilidad futura
 
-Esta implementación define el comportamiento oficial de pairwise_squared_l2
+Esta implementación define el comportamiento oficial de distancias_l2_cuadradas
 
 Cualquier implementación p  osterior, incluyendo CUDA, deberá producir exactamente el mismo resultado dentro de las tolerancias numéricas establecidas
 

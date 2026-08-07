@@ -38,23 +38,23 @@ El motor recorrerá el conjunto completo de entrenamiento para conservar una def
 
 Las funciones públicas del archivo `reference.py` serán únicamente:
 
-- `pairwise_squared_l2`, responsable del cálculo de distancias
-- `select_top_k`, responsable de seleccionar y ordenar vecinos
-- `uniform_vote`, responsable de contar votos y resolver empates
-- `knn_predict`, responsable de coordinar el flujo completo de clasificación
+- `distancias_l2_cuadradas`, responsable del cálculo de distancias
+- `seleccionar_top_k`, responsable de seleccionar y ordenar vecinos
+- `votacion_uniforme`, responsable de contar votos y resolver empates
+- `predecir_knn`, responsable de coordinar el flujo completo de clasificación
 
-Cada función debe tener una responsabilidad única, un contrato explícito y una salida determinista. `knn_predict` debe reutilizar las otras funciones en lugar de repetir su lógica
+Cada función debe tener una responsabilidad única, un contrato explícito y una salida determinista. `predecir_knn` debe reutilizar las otras funciones en lugar de repetir su lógica
 
 No se agregarán funciones públicas adicionales. Solo podrá proponerse una función auxiliar privada si evita una duplicación real, tiene una responsabilidad clara, recibe y devuelve datos bien definidos y puede probarse de forma independiente. Una función privada no debe ocultar la lógica principal ni convertirse en una capa de abstracción innecesaria
 
 Antes de implementar cualquier función deben quedar definidos sus datos de entrada, su salida, su responsabilidad, aquello que no debe hacer y las pruebas que demostrarán su comportamiento
 
-## 4  Contrato de `pairwise_squared_l2`
+## 4  Contrato de `distancias_l2_cuadradas`
 
 ### Entradas
 
-- `X_query` con forma `[Q, D]`
-- `X_train` con forma `[N, D]`
+- `datos_consulta` con forma `[Q, D]`
+- `datos_entrenamiento` con forma `[N, D]`
 - Ambos valores como `numpy.ndarray`
 - Ambos valores en `float32`
 - Ambos arreglos bidimensionales
@@ -79,7 +79,7 @@ Calcular exclusivamente la distancia euclidiana cuadrada entre cada consulta y c
 
 La función debe producir la misma matriz para las mismas entradas y no debe depender de un estado externo
 
-## 5  Contrato de `select_top_k`
+## 5  Contrato de `seleccionar_top_k`
 
 ### Entradas
 
@@ -107,7 +107,7 @@ La función debe producir la misma matriz para las mismas entradas y no debe dep
 
 La función debe devolver las distancias en su forma cuadrada, porque la raíz cuadrada no participa en la selección del orden
 
-## 6  Contrato de `uniform_vote`
+## 6  Contrato de `votacion_uniforme`
 
 ### Entradas
 
@@ -130,18 +130,18 @@ La función debe devolver las distancias en su forma cuadrada, porque la raíz c
 
 - Calcular distancias
 - Seleccionar vecinos
-- Acceder a `X_train` o `X_query`
+- Acceder a `datos_entrenamiento` o `datos_consulta`
 - Modificar las entradas
 
 La función solo recibirá las etiquetas de los vecinos ya seleccionados. No debe inferir índices ni recuperar etiquetas desde el conjunto de entrenamiento
 
-## 7  Contrato de `knn_predict`
+## 7  Contrato de `predecir_knn`
 
 ### Entradas
 
-- `X_train`
-- `y_train`
-- `X_query`
+- `datos_entrenamiento`
+- `etiquetas_entrenamiento`
+- `datos_consulta`
 - `k`
 
 Las características deben cumplir el contrato de datos `float32` de la fase y las etiquetas deben ser enteras
@@ -154,10 +154,10 @@ Las características deben cumplir el contrato de datos `float32` de la fase y l
 ### Responsabilidad
 
 - Coordinar las funciones anteriores sin duplicar su lógica
-- Calcular las distancias mediante `pairwise_squared_l2`
-- Seleccionar vecinos mediante `select_top_k`
+- Calcular las distancias mediante `distancias_l2_cuadradas`
+- Seleccionar vecinos mediante `seleccionar_top_k`
 - Recuperar las etiquetas de los índices seleccionados
-- Aplicar votación uniforme mediante `uniform_vote`
+- Aplicar votación uniforme mediante `votacion_uniforme`
 
 ### No debe
 
@@ -167,27 +167,27 @@ Las características deben cumplir el contrato de datos `float32` de la fase y l
 - Modificar las entradas
 - Introducir optimizaciones prematuras
 
-`knn_predict` será el punto de coordinación del pipeline CPU y no debe convertirse en un contenedor de lógica que corresponda a las funciones especializadas
+`predecir_knn` será el punto de coordinación del pipeline CPU y no debe convertirse en un contenedor de lógica que corresponda a las funciones especializadas
 
 ## 8  Validaciones
 
 Cada función pública validará únicamente las precondiciones directas de su propio contrato. De esta forma, una función puede fallar con claridad cuando se utiliza de manera independiente sin trasladar todas las validaciones a una única función central
 
-### `pairwise_squared_l2`
+### `distancias_l2_cuadradas`
 
-Validará que `X_query` y `X_train` sean `numpy.ndarray`, bidimensionales, no vacíos, de tipo `float32`, con el mismo número de características y sin valores `NaN` ni infinito
+Validará que `datos_consulta` y `datos_entrenamiento` sean `numpy.ndarray`, bidimensionales, no vacíos, de tipo `float32`, con el mismo número de características y sin valores `NaN` ni infinito
 
-### `select_top_k`
+### `seleccionar_top_k`
 
 Validará que la matriz de distancias sea un `numpy.ndarray` bidimensional, no vacía, con valores finitos, y que `k` sea un entero mayor o igual a `1` y menor o igual que `N`
 
-### `uniform_vote`
+### `votacion_uniforme`
 
 Validará que `neighbor_labels` sea un arreglo bidimensional no vacío, que contenga etiquetas enteras, que el número de clases sea compatible con las etiquetas y que la representación de clases originales esté ordenada y sea inequívoca
 
-### `knn_predict`
+### `predecir_knn`
 
-Validará que `X_train`, `y_train` y `X_query` sean entradas NumPy válidas, que las características sean bidimensionales y `float32`, que no estén vacías ni contengan `NaN` o infinito, que `y_train` use etiquetas enteras, que el número de etiquetas coincida con el número de muestras de entrenamiento, que entrenamiento y consultas tengan la misma cantidad de características y que `k` sea un entero mayor o igual a `1` y menor o igual que `N`
+Validará que `datos_entrenamiento`, `etiquetas_entrenamiento` y `datos_consulta` sean entradas NumPy válidas, que las características sean bidimensionales y `float32`, que no estén vacías ni contengan `NaN` o infinito, que `etiquetas_entrenamiento` use etiquetas enteras, que el número de etiquetas coincida con el número de muestras de entrenamiento, que entrenamiento y consultas tengan la misma cantidad de características y que `k` sea un entero mayor o igual a `1` y menor o igual que `N`
 
 Las funciones públicas deben fallar con errores claros, indicar la condición incumplida y evitar mensajes genéricos que oculten el origen del problema. Las validaciones compartidas solo podrán extraerse a auxiliares privadas si existe duplicación real y la separación conserva una responsabilidad única por función
 
@@ -206,7 +206,7 @@ La selección debe conservar el índice original de cada muestra durante todo el
 
 Las pruebas deben estar separadas por función para localizar con precisión cualquier error
 
-### `pairwise_squared_l2`
+### `distancias_l2_cuadradas`
 
 - Una consulta
 - Varias consultas
@@ -216,7 +216,7 @@ Las pruebas deben estar separadas por función para localizar con precisión cua
 - Puntos duplicados
 - Comparación con un cálculo manual
 
-### `select_top_k`
+### `seleccionar_top_k`
 
 - `k` igual a `1`
 - `k` igual a `N`
@@ -224,7 +224,7 @@ Las pruebas deben estar separadas por función para localizar con precisión cua
 - Orden determinista por índice
 - Varias consultas
 
-### `uniform_vote`
+### `votacion_uniforme`
 
 - Clasificación binaria
 - Clasificación multiclase
@@ -232,7 +232,7 @@ Las pruebas deben estar separadas por función para localizar con precisión cua
 - Empate de votos
 - Etiquetas no consecutivas
 
-### `knn_predict`
+### `predecir_knn`
 
 - Pipeline completo
 - Comparación con resultados manuales
@@ -283,7 +283,7 @@ El módulo de referencia debe permanecer separado de la extensión CUDA y no deb
 
 ## 13  Qué no debe hacerse en esta fase
 
-- No crear `CUDAKNNClassifier`
+- No crear `ClasificadorKNNCUDA`
 - No crear kernels CUDA
 - No usar PyTorch para calcular
 - No usar scikit-learn dentro de la implementación

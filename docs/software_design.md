@@ -8,15 +8,15 @@ Su principio central es demostrar primero la corrección del software y después
 
 ## 1. Producto y API pública
 
-El paquete Python se llamará `knn_cuda`. La clase pública principal será `CUDAKNNClassifier`, orientada a clasificación KNN exacta
+El paquete Python se llamará `knn_cuda`. La clase pública principal será `ClasificadorKNNCUDA`, orientada a clasificación KNN exacta
 
 La clase proporcionará las operaciones públicas `__init__()`, `fit()`, `kneighbors()` y `predict()`
 
 Los parámetros iniciales del constructor serán:
 
-- `n_neighbors`: número de vecinos que se utilizarán
-- `query_batch_size`: número máximo de consultas procesadas por lote
-- `train_block_size`: número de muestras de entrenamiento procesadas por bloque
+- `numero_vecinos`: número de vecinos que se utilizarán
+- `tamano_lote_consultas`: número máximo de consultas procesadas por lote
+- `tamano_bloque_entrenamiento`: número de muestras de entrenamiento procesadas por bloque
 
 El comportamiento de la API será el siguiente:
 
@@ -36,7 +36,7 @@ La división de responsabilidades será:
 - C++ valida las precondiciones críticas, recibe tensores y lanza las operaciones CUDA
 - CUDA ejecuta operaciones sin estado sobre los tensores proporcionados
 
-Los operadores C++/CUDA no conservarán estado entre invocaciones ni conocerán la instancia de `CUDAKNNClassifier`. Tampoco conocerán las etiquetas originales; trabajarán únicamente con tensores y etiquetas codificadas
+Los operadores C++/CUDA no conservarán estado entre invocaciones ni conocerán la instancia de `ClasificadorKNNCUDA`. Tampoco conocerán las etiquetas originales; trabajarán únicamente con tensores y etiquetas codificadas
 
 La compilación oficial será anticipada, como parte del flujo normal de preparación del paquete o del entorno de ejecución. La compilación JIT se utilizará únicamente para experimentación, prototipos y validaciones tempranas; no será el mecanismo oficial de distribución ni de ejecución estable
 
@@ -44,9 +44,9 @@ La compilación oficial será anticipada, como parte del flujo normal de prepara
 
 Los tensores de características respetarán estos contratos:
 
-- `X_train` tiene forma `[N, D]`, donde `N` es el número de muestras y `D` el número de características
-- `X_query` tiene forma `[Q, D]`, donde `Q` es el número de consultas
-- `X_train` y `X_query` usan `float32`
+- `datos_entrenamiento` tiene forma `[N, D]`, donde `N` es el número de muestras y `D` el número de características
+- `datos_consulta` tiene forma `[Q, D]`, donde `Q` es el número de consultas
+- `datos_entrenamiento` y `datos_consulta` usan `float32`
 - Las etiquetas codificadas usan `int64`
 - Los índices de vecinos usan `int64`
 - Los tensores internos son contiguos
@@ -66,12 +66,12 @@ Por ejemplo, si las clases originales ordenadas son `2`, `5` y `9`, la represent
 
 El flujo de etiquetas será:
 
-1. Python obtiene las clases distintas y las almacena ordenadas en `classes_`
+1. Python obtiene las clases distintas y las almacena ordenadas en `clases_`
 2. Python transforma cada etiqueta original en su código entero contiguo
 3. CUDA utiliza únicamente las etiquetas codificadas para la votación
-4. Python recupera las etiquetas originales mediante `classes_` antes de devolver las predicciones
+4. Python recupera las etiquetas originales mediante `clases_` antes de devolver las predicciones
 
-Las etiquetas de texto quedan fuera del alcance inicial. La clase `classes_` debe conservar el orden de las etiquetas originales ordenadas para que la decodificación sea determinista y para que el menor valor de etiqueta resuelva empates de votos
+Las etiquetas de texto quedan fuera del alcance inicial. La clase `clases_` debe conservar el orden de las etiquetas originales ordenadas para que la decodificación sea determinista y para que el menor valor de etiqueta resuelva empates de votos
 
 ## 5. Distancias
 
@@ -106,7 +106,7 @@ Python debe generar errores comprensibles, indicando la condición incumplida y,
 2. Convertir las características a `float32`, obtener una disposición contigua y preparar el dispositivo CUDA
 3. Ordenar y codificar las etiquetas enteras como valores `int64` contiguos desde cero
 4. Transferir a GPU los tensores que deban ser utilizados por el motor
-5. Almacenar en el objeto Python los tensores preparados, las etiquetas codificadas, `classes_` y los metadatos necesarios
+5. Almacenar en el objeto Python los tensores preparados, las etiquetas codificadas, `clases_` y los metadatos necesarios
 
 `fit()` no ejecuta entrenamiento: KNN no aprende parámetros numéricos. La operación prepara y conserva el conjunto de referencia para consultas posteriores
 
@@ -116,15 +116,15 @@ En la versión inicial, el conjunto de entrenamiento completo debe caber en la V
 
 La búsqueda exacta se organizará en dos niveles de partición:
 
-1. Python divide `X_query` en lotes de tamaño limitado por `query_batch_size`
-2. `knn_search` recibe únicamente un lote de consultas
-3. C++ y CUDA recorren `X_train` en bloques de tamaño limitado por `train_block_size`
+1. Python divide `datos_consulta` en lotes de tamaño limitado por `tamano_lote_consultas`
+2. `buscar_vecinos_knn` recibe únicamente un lote de consultas
+3. C++ y CUDA recorren `datos_entrenamiento` en bloques de tamaño limitado por `tamano_bloque_entrenamiento`
 4. Para cada bloque se calculan las distancias euclidianas cuadradas
 5. Se obtiene un Top-K local por consulta dentro del bloque
 6. El Top-K local se fusiona con el Top-K global acumulado para esa consulta
 7. Se repite el proceso hasta revisar exactamente todas las muestras de entrenamiento
 8. Al terminar cada lote, se ordenan los `k` vecinos finales y se convierten sus distancias cuadradas a distancia euclidiana normal para la salida pública
-9. Python concatena los resultados de todos los lotes y mantiene el orden original de `X_query`
+9. Python concatena los resultados de todos los lotes y mantiene el orden original de `datos_consulta`
 
 La división por lotes y bloques no puede cambiar los resultados. La fusión debe conservar el orden por distancia ascendente y, en igualdad de distancia, por menor índice de entrenamiento. La matriz completa `Q x N` no debe ser necesaria en la versión final, porque el consumo temporal de memoria debe estar acotado por el tamaño de los lotes, los bloques y los candidatos Top-K
 
@@ -133,10 +133,10 @@ La división por lotes y bloques no puede cambiar los resultados. La fusión deb
 `predict()` reutilizará la búsqueda de vecinos y seguirá este flujo:
 
 1. Buscar los índices de los vecinos con `kneighbors()` o mediante la misma operación interna sin materializar resultados innecesarios
-2. Recuperar las etiquetas codificadas correspondientes a esos índices antes de invocar `knn_vote`
+2. Recuperar las etiquetas codificadas correspondientes a esos índices antes de invocar `votacion_knn`
 3. Realizar votación uniforme sobre las etiquetas de cada conjunto de vecinos
 4. Resolver los empates con las reglas deterministas definidas en este documento
-5. Recuperar las etiquetas originales mediante `classes_`
+5. Recuperar las etiquetas originales mediante `clases_`
 6. Devolver las etiquetas predichas en la representación original
 
 Cuando sea posible, `predict()` debe evitar calcular raíces cuadradas, conservar matrices temporales que no necesita y realizar únicamente las transferencias necesarias para obtener las etiquetas finales. La búsqueda seguirá siendo exacta aunque se omitan de la ruta de predicción los datos de distancia que no participan en la votación
@@ -159,7 +159,7 @@ La separación inicial de módulos será la siguiente:
 
 - `classifier.py` conserva el estado del clasificador y presenta la API pública
 - `_validation.py` valida las entradas públicas y los parámetros
-- `_labels.py` codifica y decodifica etiquetas y mantiene la correspondencia con `classes_`
+- `_labels.py` codifica y decodifica etiquetas y mantiene la correspondencia con `clases_`
 - `_ops.py` carga y encapsula los operadores registrados de PyTorch
 - `reference.py` contiene la referencia CPU en NumPy para pruebas y comparación
 - `knn_ops.cpp` registra y valida los operadores C++/CUDA y coordina sus lanzamientos
@@ -173,25 +173,25 @@ CUDA no conoce Python ni las etiquetas originales. C++ tampoco debe conservar el
 
 Los operadores internos iniciales serán:
 
-### `pairwise_squared_l2`
+### `distancias_l2_cuadradas`
 
-- **Entradas:** tensores contiguos de consultas y entrenamiento con formas compatibles `[Q, D]` y `[N, D]`, ambos en `float32` y en el mismo dispositivo CUDA
+- **Entradas:** `datos_consulta` y `datos_entrenamiento` contiguos con formas compatibles `[Q, D]` y `[N, D]`, ambos en `float32` y en el mismo dispositivo CUDA
 - **Salida:** distancias euclidianas cuadradas para el bloque de consultas y el bloque de entrenamiento que se estén procesando
 - **Responsabilidad:** calcular la suma de diferencias al cuadrado por dimensión. No ordena vecinos, no aplica raíz cuadrada y no conoce etiquetas
 
-### `knn_search`
+### `buscar_vecinos_knn`
 
-- **Entradas:** un lote de consultas, `X_train`, `k` y `train_block_size`, con los tensores contiguos en `float32` y en el mismo dispositivo CUDA
+- **Entradas:** un lote de `datos_consulta`, `datos_entrenamiento`, `k` y `tamano_bloque_entrenamiento`, con los tensores contiguos en `float32` y en el mismo dispositivo CUDA
 - **Salidas:** índices `int64` y distancias cuadradas de los `k` vecinos por consulta, ordenados según las reglas de desempate
-- **Responsabilidad:** recorrer `X_train` por bloques, calcular distancias, obtener Top-K local, fusionar Top-K global y garantizar que ninguna muestra quede sin revisar
+- **Responsabilidad:** recorrer `datos_entrenamiento` por bloques, calcular distancias, obtener Top-K local, fusionar Top-K global y garantizar que ninguna muestra quede sin revisar
 
-### `knn_vote`
+### `votacion_knn`
 
-- **Entradas:** `neighbor_labels` con forma `[Q, K]`, tipo `int64` y dispositivo CUDA, además de `num_classes`
-- **Salida:** `predictions` con forma `[Q]`, tipo `int64` y dispositivo CUDA
+- **Entradas:** `etiquetas_vecinos` con forma `[Q, K]`, tipo `int64` y dispositivo CUDA, además de `numero_clases`
+- **Salida:** `predicciones` con forma `[Q]`, tipo `int64` y dispositivo CUDA
 - **Responsabilidad:** realizar la votación uniforme y resolver empates de forma determinista
 
-`knn_vote` no recibe índices de vecinos ni accede al conjunto completo de etiquetas de entrenamiento. La recuperación de `neighbor_labels` a partir de los índices ocurre antes de invocar `knn_vote`
+`votacion_knn` no recibe índices de vecinos ni accede al conjunto completo de etiquetas de entrenamiento. La recuperación de `etiquetas_vecinos` a partir de los índices ocurre antes de invocar `votacion_knn`
 
 Estos operadores son sin estado. Python conserva las referencias a los tensores de entrenamiento y etiquetas, y los pasa en cada llamada cuando corresponde
 
@@ -202,7 +202,7 @@ La implementación se desarrollará en etapas verificables:
 1. **Referencia CPU NumPy:** definir el comportamiento correcto, las formas, la ordenación y los desempates sin depender de CUDA
 2. **Matriz CUDA completa con Top-K temporal:** construir una versión sencilla que materialice temporalmente la matriz de distancias para validar la integración y los kernels
 3. **Top-K CUDA propio:** sustituir la selección temporal por una selección paralela de candidatos con reglas deterministas
-4. **Procesamiento por bloques:** introducir `query_batch_size` y `train_block_size`, fusionar resultados parciales y eliminar la necesidad de la matriz completa `Q x N`
+4. **Procesamiento por bloques:** introducir `tamano_lote_consultas` y `tamano_bloque_entrenamiento`, fusionar resultados parciales y eliminar la necesidad de la matriz completa `Q x N`
 5. **Optimización avanzada:** mejorar acceso a memoria, ocupación, uso de memoria compartida y organización de kernels únicamente cuando existan pruebas de corrección y benchmarks que justifiquen el cambio
 
 La progresión mantiene una referencia funcional disponible en todas las etapas. El orden de prioridad es primero corrección y después rendimiento
@@ -283,7 +283,7 @@ KNN-Cuda/
 │   ├── python/
 │   │   └── knn_cuda/
 │   │       ├── __init__.py       # API pública del paquete
-│   │       ├── classifier.py     # CUDAKNNClassifier y estado Python
+│   │       ├── classifier.py     # ClasificadorKNNCUDA y estado Python
 │   │       ├── _validation.py    # Validación de entradas y parámetros
 │   │       ├── _labels.py        # Codificación y decodificación de etiquetas
 │   │       ├── _ops.py           # Carga y encapsulado de operadores
@@ -337,7 +337,9 @@ La estructura separa la API Python, la extensión C++, los kernels CUDA, las pru
 - Ninguna optimización se acepta sin evidencia de mejora mediante benchmarks reproducibles
 - El procesamiento por bloques no puede modificar los resultados frente al recorrido completo
 - Los operadores C++/CUDA no conservan estado
-- El código se escribe en inglés
+- El código propio del proyecto se escribe en español latinoamericano
+- Los identificadores propios se escriben sin tildes ni ñ
+- Los nombres externos, las APIs de terceros y los términos obligatorios se conservan en su forma original
 - La documentación se escribe en español
 - Cada cambio debe tener pruebas y revisión
 

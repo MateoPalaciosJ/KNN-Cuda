@@ -72,7 +72,9 @@ def test_votacion_uniforme_cuda_resuelve_empate_entre_tres_etiquetas() -> None:
 
 def test_votacion_uniforme_cuda_acepta_etiquetas_negativas_y_no_consecutivas() -> None:
     etiquetas_vecinos = torch.tensor(
-        [[-3, 10, -3], [100, -50, 100, -50]], dtype=torch.int64, device="cuda"
+        [[-3, 10, -3, 10], [100, -50, 100, -50]],
+        dtype=torch.int64,
+        device="cuda",
     )
 
     predicciones = torch.ops.knn_cuda.votacion_uniforme(etiquetas_vecinos)

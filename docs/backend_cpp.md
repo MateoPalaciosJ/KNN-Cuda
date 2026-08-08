@@ -101,11 +101,15 @@ El pipeline C++ continúa siendo interno y `ClasificadorKNNCUDA` sigue utilizand
 
 No existe CUDA en esta fase y la futura implementación CUDA reutilizará el mismo esquema de operador
 
-## Compilación
+## Compilación desde fuente
 
-La extensión se compila durante la instalación editable mediante `CppExtension` y las herramientas oficiales de extensiones C++ de PyTorch
+Una extensión de PyTorch debe compilarse con la misma distribución de PyTorch que la cargará durante la ejecución para conservar compatibilidad ABI
 
-La instalación se ejecuta desde la raíz con `python -m pip install -e ".[test]"`
+Por esta razón, PyTorch debe instalarse antes de compilar KNN-Cuda desde fuente y la instalación editable oficial usa el entorno actual sin aislamiento de build
+
+La instalación CPU se ejecuta desde la raíz con `python -m pip install --no-build-isolation -e ".[test]"`
+
+Esta política conserva `CppExtension` para sistemas sin CUDA y evita compilar la extensión contra un PyTorch temporal diferente
 
 ## Pruebas
 

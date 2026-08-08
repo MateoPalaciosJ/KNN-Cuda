@@ -53,15 +53,59 @@ La implementación CUDA requiere tensores CUDA `float32`, bidimensionales, no va
 
 No convierte dtype ni mueve datos entre CPU y CUDA de forma automática
 
-## Build portable
+## Instalación y build portable
 
-La compilación comprueba `CUDA_HOME` y que la distribución de PyTorch tenga soporte CUDA para detectar un toolkit apto para compilar
+PyTorch es una dependencia de runtime y también de build porque `setup.py` utiliza `CppExtension` y `CUDAExtension`
 
-Si ambos requisitos existen, `setup.py` usa `CUDAExtension`, compila la fuente `.cu` y registra el kernel CUDA
+Una extensión nativa de PyTorch debe compilarse con la misma distribución de PyTorch que se utilizará durante la ejecución para conservar compatibilidad ABI
 
-Si faltan, usa `CppExtension` y conserva el backend CPU sin requerir CUDA Toolkit ni GPU
+El aislamiento PEP 517 crea un entorno temporal y puede resolver otro PyTorch, incluso cuando el entorno principal ya tiene una distribución compatible
+
+Para evitar esa mezcla, la instalación oficial desde fuente requiere instalar primero el PyTorch apropiado y compilar KNN-Cuda contra ese mismo entorno con `--no-build-isolation`
+
+`build-system.requires` contiene solo setuptools para que pip no instale un PyTorch temporal durante el build aislado
+
+Si se intenta compilar desde fuente sin PyTorch instalado, `setup.py` falla de forma clara antes de construir una extensión incompatible
+
+La configuración compara la versión de `nvcc` encontrada desde `CUDA_HOME` con `torch.version.cuda` del PyTorch preinstalado
+
+Si ambas versiones coinciden, `setup.py` usa `CUDAExtension`, compila la fuente `.cu` y registra el kernel CUDA
+
+Si PyTorch no tiene soporte CUDA, usa `CppExtension` para conservar el backend CPU sin requerir CUDA Toolkit ni GPU
+
+Si PyTorch tiene soporte CUDA pero no existe un toolkit utilizable, informa explícitamente que compilará solo CPU
+
+Si las versiones CUDA de PyTorch y del toolkit no coinciden, el build falla de forma explícita y no genera una extensión que pueda aparentar compatibilidad
 
 La detección de build no depende de `torch.cuda.is_available()`, que indica disponibilidad de runtime y no de toolkit
+
+### Instalación CPU
+
+La instalación CPU no requiere GPU ni CUDA Toolkit
+
+```text
+instalar una distribución CPU de PyTorch compatible
+python -m pip install --no-build-isolation -e ".[test]"
+python -m pytest tests/cpu -q
+```
+
+La instalación editable deja el paquete disponible sin modificar `PYTHONPATH`
+
+### Instalación CUDA
+
+Para compilar CUDA, el entorno de build debe resolver una distribución de PyTorch compatible con el CUDA Toolkit instalado
+
+```text
+instalar una distribución CUDA de PyTorch compatible con el sistema
+python -m pip install --no-build-isolation -e ".[test]"
+python -m pytest tests/cuda -q
+```
+
+Este flujo no depende de Google Colab y funciona en cualquier sistema que tenga un PyTorch y un CUDA Toolkit compatibles
+
+La distribución futura mediante wheels podrá publicar artefactos compilados para combinaciones concretas de sistema operativo, Python, PyTorch y CUDA sin requerir compilación local
+
+Un modo explícito de build `AUTO`, `CPU` y `CUDA` es una mejora futura recomendable para evitar que una intención explícita de CUDA termine en un build CPU
 
 ## Pruebas
 

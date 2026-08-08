@@ -60,6 +60,23 @@ Cada escenario CUDA realiza calentamiento antes de registrar tiempos para exclui
 
 Antes de medir cada pipeline los scripts comparan una salida nativa contra la referencia NumPy
 
+## Profiling de distancias CUDA
+
+`perfilar_distancias_cuda` captura una llamada real a `torch.ops.knn_cuda.distancias_l2_cuadradas` despues de calentamiento y usa por defecto el escenario grande de la linea base
+
+```powershell
+python -m benchmarks.perfilar_distancias_cuda
+python -m benchmarks.perfilar_distancias_cuda --traza distancias_cuda.json
+```
+
+El perfil muestra tablas de actividades CPU y CUDA ordenadas por tiempo propio junto con llamadas, memoria CUDA asignada, pico adicional y contigüidad de las entradas
+
+La tabla puede mostrar las operaciones ATen de validacion como `isfinite`, `all` e `item` y el kernel propio con el nombre disponible en la traza
+
+La opcion `--traza` exporta una traza compatible con Chrome Trace o Perfetto y no requiere ninguna dependencia adicional del proyecto
+
+El profiler mide la llamada completa del operador y permite separar eventos registrados, pero no sustituye Nsight Compute para conocer ocupacion, registros por thread, spills, eficiencia de coalescing, contadores de memoria o conflictos de shared memory
+
 ## Memoria CUDA
 
 El benchmark de operadores informa memoria CUDA asignada y pico adicional mediante las APIs de memoria de PyTorch

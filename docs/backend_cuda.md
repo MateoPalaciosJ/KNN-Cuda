@@ -4,13 +4,13 @@
 
 La Fase 3 añade implementaciones CUDA reales detrás de los esquemas de operadores ya aprobados en CPU
 
-Las primeras implementaciones son `distancias_l2_cuadradas`, `seleccionar_top_k` y `votacion_uniforme` y conservan NumPy como referencia primaria de corrección
+Las implementaciones son `distancias_l2_cuadradas`, `seleccionar_top_k`, `votacion_uniforme` y `predecir_knn` y conservan NumPy como referencia primaria de corrección
 
 ## Arquitectura
 
 La ruta nativa se mantiene como Python → PyTorch → `CUDAExtension` → dispatcher de PyTorch → implementación CUDA
 
-Los esquemas `knn_cuda::distancias_l2_cuadradas`, `knn_cuda::seleccionar_top_k` y `knn_cuda::votacion_uniforme` son únicos y el dispatcher selecciona la implementación CPU o CUDA según el dispositivo de los tensores de entrada
+Los esquemas `knn_cuda::distancias_l2_cuadradas`, `knn_cuda::seleccionar_top_k`, `knn_cuda::votacion_uniforme` y `knn_cuda::predecir_knn` son únicos y el dispatcher selecciona la implementación CPU o CUDA según el dispositivo de los tensores de entrada
 
 La implementación CPU C++ continúa disponible y no se modifica al añadir CUDA
 
@@ -20,6 +20,7 @@ La implementación CPU C++ continúa disponible y no se modifica al añadir CUDA
 - `src/cuda/distancias_l2_cuadradas.cu` contiene el launcher y el kernel CUDA
 - `src/cuda/seleccionar_top_k.cu` contiene el launcher y el kernel CUDA de selección
 - `src/cuda/votacion_uniforme.cu` contiene el launcher y el kernel CUDA de votación
+- `src/cuda/predecir_knn.cu` coordina el pipeline CUDA completo
 - `src/cpp/registro.cpp` registra la implementación CUDA del mismo esquema cuando la extensión se compila con CUDA
 - `setup.py` elige `CppExtension` o `CUDAExtension` según la disponibilidad de un toolkit compatible
 
@@ -78,6 +79,22 @@ La operación admite dtypes enteros compatibles, incluidos `int32` e `int64`, y 
 No crea temporales globales adicionales, acepta vistas no contiguas mediante `contiguous()` interno cuando es necesario y usa el stream CUDA actual
 
 Esta primera versión tiene complejidad `O(Q × K²)` y prioriza corrección, determinismo y claridad antes de optimizaciones futuras
+
+## Pipeline KNN CUDA
+
+`predecir_knn` completa el pipeline KNN CUDA y reutiliza `distancias_l2_cuadradas`, `seleccionar_top_k` y `votacion_uniforme` sin reimplementar sus responsabilidades
+
+Primero valida las etiquetas originales, su correspondencia con las muestras, `k` y la coincidencia de dispositivos CUDA antes de calcular distancias
+
+Después calcula distancias `[Q, N]`, selecciona índices `[Q, k]`, obtiene `etiquetas_vecinos` mediante indexado ATen en GPU y aplica la votación uniforme
+
+El indexado conserva el dtype entero de `etiquetas_entrenamiento` y no realiza transferencias CPU o GPU ni requiere un kernel auxiliar de gather
+
+Los operadores se encadenan en el stream CUDA actual y los temporales naturales son distancias, selección e `etiquetas_vecinos`
+
+El pipeline hereda el desempate de distancia por índice menor y el desempate de votos por etiqueta menor
+
+NumPy sigue siendo la referencia primaria y las pruebas comparan las predicciones CUDA con NumPy y con C++ CPU
 
 ## Streams y errores
 
@@ -159,6 +176,6 @@ Google Colab es un entorno de desarrollo y validación opcional, no una dependen
 
 ## Limitaciones pendientes
 
-`distancias_l2_cuadradas`, `seleccionar_top_k` y `votacion_uniforme` tienen implementación CUDA
+`distancias_l2_cuadradas`, `seleccionar_top_k`, `votacion_uniforme` y `predecir_knn` tienen implementación CUDA
 
-`predecir_knn`, la integración de `ClasificadorKNNCUDA`, los benchmarks y las optimizaciones de kernel permanecen pendientes
+La integración de `ClasificadorKNNCUDA`, los benchmarks y las optimizaciones de kernel permanecen pendientes

@@ -30,10 +30,11 @@ El estado del clasificador, incluyendo el conjunto de entrenamiento, las etiquet
 
 El valor predeterminado `"cpu"` preserva un comportamiento reproducible entre máquinas y no activa aceleración implícitamente
 
-- `"cpu"` utiliza el backend C++ CPU y exige que el Dispatcher tenga los kernels CPU requeridos
-- `"cuda"` y `"auto"` son valores reconocidos, pero todavía producen un error explícito durante `ajustar()` porque su integración de alto nivel sigue pendiente
+- `"cpu"` utiliza explícitamente el backend C++ CPU y exige que el Dispatcher tenga los kernels CPU requeridos
+- `"cuda"` exige `torch.cuda.is_available()` y los kernels CUDA requeridos. No degrada silenciosamente a CPU
+- `"auto"` utiliza CUDA solo si el runtime y los kernels CUDA requeridos están disponibles. En cualquier otro caso utiliza CPU
 
-`dispositivo_efectivo_` es el único indicador visible del dispositivo seleccionado y se establece durante un `ajustar()` CPU exitoso como `torch.device("cpu")`
+`dispositivo_efectivo_` es el único indicador visible del dispositivo seleccionado y se establece durante un `ajustar()` exitoso como `torch.device("cpu")` o el dispositivo CUDA actual
 
 La integración no expondrá tensores PyTorch en la API pública ni añadirá métodos públicos solo para consultar el backend
 
@@ -116,23 +117,23 @@ La capa Python validará las entradas públicas antes de solicitar operaciones n
 
 Python debe generar errores comprensibles, indicando la condición incumplida y, cuando sea útil, los valores observados y esperados. C++ volverá a comprobar las precondiciones críticas relacionadas con tamaños, tipos, dispositivos y parámetros antes de lanzar kernels. Esta segunda comprobación protege la frontera nativa y evita depender exclusivamente de la validación de alto nivel
 
-## 7. Flujo de `ajustar()` para CPU
+## 7. Flujo de `ajustar()`
 
-La integración CPU de Fase 4 sigue este flujo:
+La integración de Fase 4 sigue este flujo:
 
 1. Validar las dimensiones, dtype, valores finitos, tamaños y correspondencia entre muestras y etiquetas sin alterar el contrato NumPy
 2. Conservar `datos_entrenamiento_` y `etiquetas_entrenamiento_` como copias NumPy independientes
-3. Rechazar explícitamente `"cuda"` y `"auto"` hasta integrar esos modos de alto nivel
-4. Preparar una representación Tensor CPU del entrenamiento una sola vez
+3. Resolver el dispositivo efectivo según `"cpu"`, `"cuda"` o `"auto"`
+4. Preparar una representación Tensor del entrenamiento una sola vez en el dispositivo efectivo
 5. Establecer `dispositivo_efectivo_` durante `ajustar()`
 
 `ajustar()` no ejecuta entrenamiento: KNN no aprende parámetros numéricos. La operación prepara y conserva el conjunto de referencia para consultas posteriores
 
 Cuando el dispositivo efectivo sea CUDA, el conjunto de entrenamiento completo debe caber en la VRAM disponible y no se contempla una representación parcial ni procesamiento out-of-core durante `ajustar()`
 
-## 8. Flujo de `vecinos_mas_cercanos()` para CPU
+## 8. Flujo de `vecinos_mas_cercanos()`
 
-La integración reutiliza `distancias_l2_cuadradas` y `seleccionar_top_k` CPU bajo el Dispatcher
+La integración reutiliza `distancias_l2_cuadradas` y `seleccionar_top_k` bajo el Dispatcher para el dispositivo efectivo
 
 La capa Python aplicará la raíz cuadrada únicamente a las distancias seleccionadas y devolverá `numpy.ndarray` para preservar el contrato público
 
@@ -149,7 +150,7 @@ En la referencia CPU actual, `predecir_knn` sigue este flujo:
 
 `votacion_uniforme` recibe únicamente `etiquetas_vecinos`, realiza votación uniforme y resuelve los empates por la etiqueta original menor
 
-En la integración CPU, `predecir()` invoca `knn_cuda::predecir_knn` mediante el Dispatcher y conserva las mismas etiquetas originales y reglas deterministas que la referencia NumPy
+La integración invoca `knn_cuda::predecir_knn` mediante el Dispatcher y conserva las mismas etiquetas originales y reglas deterministas que la referencia NumPy
 
 Cuando sea posible, `predecir()` debe evitar calcular raíces cuadradas, conservar matrices temporales que no necesita y realizar únicamente las transferencias necesarias para obtener las etiquetas finales, la búsqueda seguirá siendo exacta aunque se omitan de la ruta de predicción los datos de distancia que no participan en la votación
 
@@ -211,7 +212,7 @@ La implementación se desarrollará en etapas verificables:
 1. **Referencia CPU NumPy:** define el comportamiento correcto, las formas, la ordenación y los desempates
 2. **Backend C++ CPU:** implementa y valida los cuatro operadores bajo el Dispatcher
 3. **Backend CUDA:** implementa y valida los mismos cuatro operadores bajo los mismos esquemas
-4. **Integración de Fase 4:** conecta `ClasificadorKNNCUDA` con CPU C++ sin ampliar todavía sus tipos públicos de entrada ni activar CUDA o `"auto"`
+4. **Integración de Fase 4:** conecta `ClasificadorKNNCUDA` con CPU C++ y CUDA sin ampliar sus tipos públicos de entrada
 5. **Optimización posterior:** podrá introducir procesamiento por bloques y optimizaciones de kernel solo con pruebas de corrección y benchmarks que las justifiquen
 
 La progresión mantiene una referencia funcional disponible en todas las etapas. El orden de prioridad es primero corrección y después rendimiento

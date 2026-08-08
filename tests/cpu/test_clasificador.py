@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 import torch
 
+import knn_cuda._backend_nativo as backend_nativo
 from knn_cuda import ClasificadorKNNCUDA
 from knn_cuda import referencia
 
@@ -502,16 +503,48 @@ def test_clasificador_knn_cuda_usa_cpu_como_dispositivo_predeterminado() -> None
     assert not hasattr(clasificador, "dispositivo_efectivo_")
 
 
-@pytest.mark.parametrize("dispositivo", ["cuda", "auto"])
-def test_clasificador_reconoce_dispositivos_pendientes_y_falla_al_ajustar(
-    dispositivo: str,
+def test_clasificador_cuda_falla_cuando_el_runtime_no_esta_disponible(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    clasificador = ClasificadorKNNCUDA(dispositivo=dispositivo)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    clasificador = ClasificadorKNNCUDA(dispositivo="cuda")
     datos_entrenamiento = np.array([[0.0]], dtype=np.float32)
     etiquetas_entrenamiento = np.array([1], dtype=np.int64)
 
-    with pytest.raises(RuntimeError, match="todavia no esta integrado"):
+    with pytest.raises(RuntimeError, match="CUDA fue solicitada"):
         clasificador.ajustar(datos_entrenamiento, etiquetas_entrenamiento)
+
+    assert clasificador.ajustado_ is False
+
+
+def test_clasificador_auto_usa_cpu_cuando_cuda_no_esta_disponible(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    clasificador = ClasificadorKNNCUDA(dispositivo="auto")
+    datos_entrenamiento = np.array([[0.0]], dtype=np.float32)
+    etiquetas_entrenamiento = np.array([1], dtype=np.int64)
+
+    clasificador.ajustar(datos_entrenamiento, etiquetas_entrenamiento)
+
+    assert clasificador.dispositivo_efectivo_ == torch.device("cpu")
+
+
+def test_clasificador_cuda_falla_si_no_existen_kernels_cuda(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(
+        backend_nativo,
+        "_obtener_operador_sin_kernel",
+        lambda clave_despacho: "knn_cuda::predecir_knn",
+    )
+    clasificador = ClasificadorKNNCUDA(dispositivo="cuda")
+
+    with pytest.raises(RuntimeError, match="backend CUDA"):
+        clasificador.ajustar(
+            np.array([[0.0]], dtype=np.float32), np.array([1], dtype=np.int64)
+        )
 
     assert clasificador.ajustado_ is False
 

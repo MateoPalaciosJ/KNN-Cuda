@@ -125,7 +125,7 @@ La verificación completa ejecuta primero esas pruebas y después `python -m pyt
 
 `ClasificadorKNNCUDA` utiliza el backend C++ CPU y mantiene entradas y salidas públicas NumPy
 
-Los operadores nativos actuales tienen implementaciones CUDA validadas. La integración CUDA y `"auto"` de `ClasificadorKNNCUDA` continúan pendientes
+Los operadores nativos actuales tienen implementaciones CUDA validadas. `ClasificadorKNNCUDA` usa `"cpu"`, `"cuda"` o `"auto"` mediante el Dispatcher y conserva entradas y salidas públicas NumPy
 
 El temporal conceptual `[Q, N, D]` de `distancias_l2_cuadradas` CPU continúa siendo un riesgo de memoria pendiente para fases de optimización
 

@@ -178,4 +178,8 @@ Google Colab es un entorno de desarrollo y validación opcional, no una dependen
 
 `distancias_l2_cuadradas`, `seleccionar_top_k`, `votacion_uniforme` y `predecir_knn` tienen implementación CUDA
 
-`ClasificadorKNNCUDA` ya utiliza CPU C++ mediante el Dispatcher. La integración CUDA y `"auto"`, los benchmarks y las optimizaciones de kernel permanecen pendientes
+`ClasificadorKNNCUDA` usa `"cpu"`, `"cuda"` y `"auto"` mediante el Dispatcher. `"cuda"` exige runtime y kernels CUDA disponibles, mientras `"auto"` elige CUDA solo cuando ambos existen y usa CPU en cualquier otro caso
+
+`dispositivo_efectivo_` conserva el dispositivo resuelto durante `ajustar()` y evita cambiar de backend en cada predicción
+
+Los benchmarks y las optimizaciones de kernel permanecen pendientes

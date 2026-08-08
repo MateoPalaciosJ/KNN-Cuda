@@ -6,7 +6,7 @@ La Fase 2 crea la primera infraestructura nativa del proyecto mediante extension
 
 Su objetivo es validar la cadena Python → PyTorch → C++ con operadores CPU registrados en el dispatcher de PyTorch
 
-NumPy conserva el papel de referencia primaria de corrección y el clasificador público continúa utilizando el motor de referencia durante esta fase
+NumPy conserva el papel de referencia primaria de corrección y `ClasificadorKNNCUDA` utiliza el backend C++ CPU desde la primera integración de Fase 4
 
 ## Arquitectura
 
@@ -97,7 +97,7 @@ Las etiquetas de vecinos se obtienen mediante indexado de `etiquetas_entrenamien
 
 La operación conserva los desempates deterministas de distancia y votación, prioriza la corrección sobre el rendimiento y se compara de forma integral con la referencia NumPy
 
-El pipeline C++ continúa siendo interno y `ClasificadorKNNCUDA` sigue utilizando la referencia NumPy
+El pipeline C++ continúa siendo interno y `ClasificadorKNNCUDA` lo invoca mediante el Dispatcher para el dispositivo CPU
 
 La implementación CUDA actual reutiliza el mismo esquema de operador
 
@@ -123,9 +123,9 @@ La verificación completa ejecuta primero esas pruebas y después `python -m pyt
 
 `seleccionar_top_k`, `votacion_uniforme` y `predecir_knn` ya están implementados en C++ CPU
 
-`ClasificadorKNNCUDA` todavía no utiliza el backend C++
+`ClasificadorKNNCUDA` utiliza el backend C++ CPU y mantiene entradas y salidas públicas NumPy
 
-Los operadores nativos actuales tienen implementaciones CUDA validadas. La integración de `ClasificadorKNNCUDA` con el backend nativo continúa pendiente
+Los operadores nativos actuales tienen implementaciones CUDA validadas. La integración CUDA y `"auto"` de `ClasificadorKNNCUDA` continúan pendientes
 
 El temporal conceptual `[Q, N, D]` de `distancias_l2_cuadradas` CPU continúa siendo un riesgo de memoria pendiente para fases de optimización
 

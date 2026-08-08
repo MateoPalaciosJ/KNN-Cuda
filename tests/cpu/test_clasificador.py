@@ -1,7 +1,9 @@
 import numpy as np
 import pytest
+import torch
 
 from knn_cuda import ClasificadorKNNCUDA
+from knn_cuda import referencia
 
 
 def test_clasificador_knn_cuda_usa_numero_vecinos_por_defecto() -> None:
@@ -491,3 +493,128 @@ def test_vecinos_mas_cercanos_no_modifica_las_consultas() -> None:
     clasificador.vecinos_mas_cercanos(datos_consulta)
 
     np.testing.assert_array_equal(datos_consulta, datos_consulta_antes)
+
+
+def test_clasificador_knn_cuda_usa_cpu_como_dispositivo_predeterminado() -> None:
+    clasificador = ClasificadorKNNCUDA()
+
+    assert clasificador.dispositivo == "cpu"
+    assert not hasattr(clasificador, "dispositivo_efectivo_")
+
+
+@pytest.mark.parametrize("dispositivo", ["cuda", "auto"])
+def test_clasificador_reconoce_dispositivos_pendientes_y_falla_al_ajustar(
+    dispositivo: str,
+) -> None:
+    clasificador = ClasificadorKNNCUDA(dispositivo=dispositivo)
+    datos_entrenamiento = np.array([[0.0]], dtype=np.float32)
+    etiquetas_entrenamiento = np.array([1], dtype=np.int64)
+
+    with pytest.raises(RuntimeError, match="todavia no esta integrado"):
+        clasificador.ajustar(datos_entrenamiento, etiquetas_entrenamiento)
+
+    assert clasificador.ajustado_ is False
+
+
+def test_clasificador_rechaza_dispositivo_invalido() -> None:
+    with pytest.raises(ValueError, match="dispositivo"):
+        ClasificadorKNNCUDA(dispositivo="otro")
+
+
+def test_ajustar_prepara_tensores_cpu_y_dispositivo_efectivo() -> None:
+    clasificador = ClasificadorKNNCUDA()
+    datos_entrenamiento = np.array([[0.0], [2.0]], dtype=np.float32)
+    etiquetas_entrenamiento = np.array([5, 2], dtype=np.int32)
+
+    clasificador.ajustar(datos_entrenamiento, etiquetas_entrenamiento)
+
+    assert clasificador.dispositivo_efectivo_ == torch.device("cpu")
+    assert clasificador.datos_entrenamiento_tensor_.device.type == "cpu"
+    assert clasificador.etiquetas_entrenamiento_tensor_.device.type == "cpu"
+    assert clasificador.datos_entrenamiento_tensor_.dtype == torch.float32
+    assert clasificador.etiquetas_entrenamiento_tensor_.dtype == torch.int32
+    np.testing.assert_array_equal(
+        clasificador.datos_entrenamiento_tensor_.numpy(),
+        clasificador.datos_entrenamiento_,
+    )
+    np.testing.assert_array_equal(
+        clasificador.etiquetas_entrenamiento_tensor_.numpy(),
+        clasificador.etiquetas_entrenamiento_,
+    )
+
+
+def test_predecir_usa_el_operador_cpu_y_no_la_referencia_numpy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clasificador = ClasificadorKNNCUDA(numero_vecinos=1)
+    datos_entrenamiento = np.array([[0.0], [2.0]], dtype=np.float32)
+    etiquetas_entrenamiento = np.array([5, 2], dtype=np.int64)
+    datos_consulta = np.array([[0.1], [1.9]], dtype=np.float32)
+
+    def fallar_referencia(*argumentos: object, **argumentos_nombrados: object) -> None:
+        raise AssertionError("la referencia NumPy no debe ser el backend operativo")
+
+    monkeypatch.setattr(referencia, "predecir_knn", fallar_referencia)
+    clasificador.ajustar(datos_entrenamiento, etiquetas_entrenamiento)
+    predicciones = clasificador.predecir(datos_consulta)
+
+    assert torch._C._dispatch_has_kernel_for_dispatch_key(
+        "knn_cuda::predecir_knn", "CPU"
+    )
+    np.testing.assert_array_equal(predicciones, np.array([5, 2], dtype=np.int64))
+
+
+def test_predecir_cpu_preserva_etiquetas_negativas_no_consecutivas_y_dtype() -> None:
+    clasificador = ClasificadorKNNCUDA(numero_vecinos=2)
+    datos_entrenamiento = np.array([[0.0], [2.0], [4.0], [6.0]], dtype=np.float32)
+    etiquetas_entrenamiento = np.array([-3, 100, 100, -3], dtype=np.int32)
+    datos_consulta = np.array([[1.0], [5.0]], dtype=np.float32)
+
+    clasificador.ajustar(datos_entrenamiento, etiquetas_entrenamiento)
+    predicciones = clasificador.predecir(datos_consulta)
+
+    assert predicciones.dtype == np.int32
+    np.testing.assert_array_equal(predicciones, np.array([-3, -3], dtype=np.int32))
+
+
+def test_predecir_cpu_conserva_desempates_y_es_determinista() -> None:
+    clasificador = ClasificadorKNNCUDA(numero_vecinos=2)
+    datos_entrenamiento = np.array([[0.0], [2.0], [4.0], [6.0]], dtype=np.float32)
+    etiquetas_entrenamiento = np.array([7, 2, 7, 2], dtype=np.int64)
+    datos_consulta = np.array([[1.0], [3.0]], dtype=np.float32)
+
+    clasificador.ajustar(datos_entrenamiento, etiquetas_entrenamiento)
+    primeras_predicciones = clasificador.predecir(datos_consulta)
+    segundas_predicciones = clasificador.predecir(datos_consulta)
+
+    np.testing.assert_array_equal(primeras_predicciones, np.array([2, 2]))
+    np.testing.assert_array_equal(primeras_predicciones, segundas_predicciones)
+
+
+def test_predecir_cpu_rechaza_consulta_float64_con_error_publico() -> None:
+    clasificador = ClasificadorKNNCUDA(numero_vecinos=1)
+    clasificador.ajustar(
+        np.array([[0.0]], dtype=np.float32), np.array([1], dtype=np.int64)
+    )
+
+    with pytest.raises(TypeError, match="datos_consulta"):
+        clasificador.predecir(np.array([[0.0]], dtype=np.float64))
+
+
+def test_ajustar_por_segunda_vez_reemplaza_el_estado_nativo() -> None:
+    clasificador = ClasificadorKNNCUDA(numero_vecinos=1)
+    clasificador.ajustar(
+        np.array([[0.0], [2.0]], dtype=np.float32),
+        np.array([1, 2], dtype=np.int64),
+    )
+    tensor_anterior = clasificador.datos_entrenamiento_tensor_
+
+    clasificador.ajustar(
+        np.array([[10.0], [12.0]], dtype=np.float32),
+        np.array([7, 8], dtype=np.int64),
+    )
+    predicciones = clasificador.predecir(np.array([[10.1]], dtype=np.float32))
+
+    assert clasificador.datos_entrenamiento_tensor_ is not tensor_anterior
+    assert clasificador.dispositivo_efectivo_ == torch.device("cpu")
+    np.testing.assert_array_equal(predicciones, np.array([7], dtype=np.int64))

@@ -19,7 +19,7 @@ Python → ClasificadorKNNCUDA → PyTorch → extensión C++/CUDA → dispatche
 3. La extensión C++ recibe tensores y parámetros, valida sus propiedades y ejecuta la implementación disponible para el dispositivo
 4. La Fase 2 implementó operadores CPU mediante C++
 5. La Fase 3 añadió implementaciones CUDA y kernels para GPU bajo los mismos esquemas
-6. La Fase 4 integrará el clasificador público sin crear una segunda API
+6. La Fase 4 integra inicialmente el clasificador público con CPU C++ sin crear una segunda API
 7. El resultado vuelve a Python mediante PyTorch en un formato utilizable para el usuario
 
 No se utilizará pybind11 como estrategia independiente ni existirá un segundo sistema de binding

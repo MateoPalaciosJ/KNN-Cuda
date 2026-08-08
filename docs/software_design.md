@@ -12,11 +12,13 @@ El paquete Python se llamará `knn_cuda`. La clase pública principal será `Cla
 
 La clase proporcionará las operaciones públicas `__init__()`, `ajustar()`, `vecinos_mas_cercanos()` y `predecir()`
 
-Durante la Fase 1, el constructor inicial será `ClasificadorKNNCUDA(numero_vecinos=5)` y solo recibirá este parámetro
+La API pública vigente es `ClasificadorKNNCUDA(numero_vecinos=5)`
 
 - `numero_vecinos`: número de vecinos que se utilizarán
 
-`tamano_lote_consultas` y `tamano_bloque_entrenamiento` pertenecen al backend CUDA futuro para controlar el procesamiento por lotes y bloques, no son parámetros obligatorios del constructor CPU inicial y solo podrán incorporarse a la API pública cuando la integración CUDA lo requiera
+La Fase 4 ha aprobado que una integración posterior amplíe el constructor a `ClasificadorKNNCUDA(numero_vecinos=5, dispositivo="cpu")`
+
+`dispositivo` aceptará `"cpu"`, `"cuda"` y `"auto"`, sin introducir parámetros públicos de lotes o bloques
 
 El comportamiento de la API será el siguiente:
 
@@ -26,21 +28,35 @@ El comportamiento de la API será el siguiente:
 
 El estado del clasificador, incluyendo el conjunto de entrenamiento, las etiquetas originales y los metadatos, permanece gestionado por Python. La API debe ocultar al usuario la coordinación de la extensión C++ y de los kernels CUDA
 
+## 1.1 Política de dispositivo de Fase 4
+
+La integración futura utilizará `ClasificadorKNNCUDA(numero_vecinos=5, dispositivo="cpu")`
+
+El valor predeterminado `"cpu"` preserva un comportamiento reproducible entre máquinas y no activa aceleración implícitamente
+
+- `"cpu"` utilizará el backend C++ CPU y exigirá que el Dispatcher tenga un kernel CPU para el operador solicitado
+- `"cuda"` exigirá `torch.cuda.is_available()` y un kernel CUDA registrado para el operador solicitado. No degradará silenciosamente a CPU
+- `"auto"` utilizará CUDA solo cuando el runtime CUDA y el kernel CUDA estén disponibles. En cualquier otro caso utilizará CPU
+
+`dispositivo_efectivo_` será el único indicador visible del dispositivo seleccionado y se establecerá durante `ajustar()` como un `torch.device`
+
+La integración no expondrá tensores PyTorch en la API pública ni añadirá métodos públicos solo para consultar el backend
+
 ## 2. Integración tecnológica
 
 La estrategia nativa oficial utiliza la infraestructura de extensiones de PyTorch y operadores registrados mediante su dispatcher
 
-Durante la Fase 2, la extensión se compilará con `CppExtension` y expondrá operadores CPU sin utilizar CUDA ni GPU
+La Fase 2 implementó operadores CPU mediante `CppExtension`
 
-Durante la Fase 3, la misma arquitectura evolucionará a `CUDAExtension` para incorporar implementaciones CUDA sin reemplazar la ruta de integración ni modificar la API pública
+La Fase 3 añadió implementaciones CUDA mediante `CUDAExtension` sin reemplazar la ruta de integración ni modificar la API pública
 
 No se utilizará pybind11 como estrategia independiente ni existirá un segundo sistema de binding
 
 La división de responsabilidades será:
 
 - Python conserva el estado, valida las entradas públicas y coordina las llamadas
-- C++ valida las precondiciones críticas, recibe tensores y ejecuta operadores CPU en la Fase 2 u operaciones CUDA en la Fase 3
-- CUDA ejecutará operaciones sin estado sobre los tensores proporcionados a partir de la Fase 3
+- C++ valida las precondiciones críticas, recibe tensores y ejecuta operadores CPU
+- CUDA ejecuta operaciones sin estado sobre tensores CUDA
 
 Los operadores C++/CUDA no conservarán estado entre invocaciones ni conocerán la instancia de `ClasificadorKNNCUDA`. Reciben tensores con las etiquetas originales cuando la operación lo requiere y no necesitan metadatos externos de clases
 
@@ -55,12 +71,12 @@ Los tensores de características respetarán estos contratos:
 - `datos_entrenamiento` y `datos_consulta` usan `float32`
 - Las etiquetas usan un dtype entero compatible y conservan su representación original
 - Los índices de vecinos usan `int64`
-- Los tensores internos son contiguos
-- Todos los tensores internos se encuentran en el mismo dispositivo CUDA
+- Los operadores nativos aceptan vistas no contiguas válidas y crean una representación contigua interna solo cuando es necesaria
+- Los tensores que participan en una operación nativa comparten un mismo dispositivo, CPU o CUDA según el Dispatcher
 
-La API Python puede recibir `numpy.ndarray` o `torch.Tensor`. La capa Python convierte las entradas al formato interno requerido: tensor PyTorch, tipo `float32` para características, tipo `int64` para índices, dtype entero original para etiquetas, disposición contigua y dispositivo CUDA. La conversión debe ser explícita y validable para que el usuario reciba errores comprensibles cuando una entrada no sea compatible
+La API pública vigente recibe únicamente `numpy.ndarray` y rechaza dtype incompatibles sin convertirlos silenciosamente
 
-Las salidas conservan el tipo de la entrada pública correspondiente: si la entrada pública es un `torch.Tensor`, la salida correspondiente también será un `torch.Tensor`; si la entrada pública es un `numpy.ndarray`, la salida correspondiente también será un `numpy.ndarray`. Internamente, todas las operaciones producen tensores CUDA y la capa Python realiza la conversión final cuando corresponde
+La futura integración convertirá explícitamente las entradas NumPy válidas a tensores PyTorch para el dispositivo efectivo y convertirá las salidas a `numpy.ndarray` para conservar el contrato público
 
 `vecinos_mas_cercanos()` devuelve distancias `float32` e índices `int64` y `predecir()` devuelve las etiquetas originales
 
@@ -93,47 +109,39 @@ Los kernels calculan la distancia euclidiana cuadrada entre cada consulta y cada
 La capa Python validará las entradas públicas antes de solicitar operaciones nativas. Como mínimo, comprobará:
 
 - Dimensiones correctas para datos de entrenamiento y consultas
-- Tipos compatibles y conversiones permitidas
+- Tipos compatibles sin conversiones automáticas de dtype
 - Conjuntos no vacíos cuando la operación requiera datos
 - Coincidencia entre el número de muestras de entrenamiento y el número de etiquetas
 - Coincidencia entre el número de características de entrenamiento y consultas
 - Ausencia de valores `NaN` e infinito en las características
 - Valor válido de `k`: entero positivo y no mayor que el número de muestras de entrenamiento
-- Disponibilidad de CUDA para las operaciones del motor
-- Contigüidad de los tensores internos después de la conversión
-- Coincidencia de dispositivo entre los tensores que participan en una operación
+- Disponibilidad del kernel CPU cuando se solicite CPU
+- Disponibilidad de runtime CUDA y del kernel CUDA cuando se solicite CUDA
+- Coincidencia de dispositivo entre los tensores que participan en una operación nativa
 
 Python debe generar errores comprensibles, indicando la condición incumplida y, cuando sea útil, los valores observados y esperados. C++ volverá a comprobar las precondiciones críticas relacionadas con tamaños, tipos, dispositivos y parámetros antes de lanzar kernels. Esta segunda comprobación protege la frontera nativa y evita depender exclusivamente de la validación de alto nivel
 
-## 7. Flujo de `ajustar()`
+## 7. Flujo futuro de `ajustar()`
 
-`ajustar()` seguirá este flujo cuando se integre el backend CUDA:
+La integración de Fase 4 seguirá este flujo aprobado:
 
-1. Validar las dimensiones, tipos, valores finitos, tamaños y correspondencia entre muestras y etiquetas
-2. Convertir las características a `float32`, obtener una disposición contigua y preparar el dispositivo CUDA
-3. Conservar las etiquetas enteras originales con su dtype compatible
-4. Transferir a GPU los tensores que deban ser utilizados por el motor
-5. Almacenar en el objeto Python los tensores preparados, las etiquetas originales y los metadatos necesarios
+1. Validar las dimensiones, dtype, valores finitos, tamaños y correspondencia entre muestras y etiquetas sin alterar el contrato NumPy
+2. Conservar `datos_entrenamiento_` y `etiquetas_entrenamiento_` como copias NumPy independientes
+3. Resolver el dispositivo efectivo según `"cpu"`, `"cuda"` o `"auto"`
+4. Preparar una representación Tensor del entrenamiento una sola vez en el dispositivo efectivo
+5. Establecer `dispositivo_efectivo_` durante `ajustar()`
 
 `ajustar()` no ejecuta entrenamiento: KNN no aprende parámetros numéricos. La operación prepara y conserva el conjunto de referencia para consultas posteriores
 
-En la versión inicial con CUDA, el conjunto de entrenamiento completo debe caber en la VRAM disponible, no se contempla una representación parcial ni procesamiento out-of-core durante `ajustar()`
+Cuando el dispositivo efectivo sea CUDA, el conjunto de entrenamiento completo debe caber en la VRAM disponible y no se contempla una representación parcial ni procesamiento out-of-core durante `ajustar()`
 
-## 8. Flujo de `vecinos_mas_cercanos()`
+## 8. Flujo futuro de `vecinos_mas_cercanos()`
 
-En el backend CUDA futuro, la búsqueda exacta se organizará en dos niveles de partición:
+La integración reutilizará `distancias_l2_cuadradas` y `seleccionar_top_k` bajo el Dispatcher para el dispositivo efectivo
 
-1. Python divide `datos_consulta` en lotes de tamaño limitado por el parámetro interno o futuro `tamano_lote_consultas`
-2. `buscar_vecinos_knn` recibe únicamente un lote de consultas
-3. C++ y CUDA recorren `datos_entrenamiento` en bloques de tamaño limitado por `tamano_bloque_entrenamiento`
-4. Para cada bloque se calculan las distancias euclidianas cuadradas
-5. Se obtiene un Top-K local por consulta dentro del bloque
-6. El Top-K local se fusiona con el Top-K global acumulado para esa consulta
-7. Se repite el proceso hasta revisar exactamente todas las muestras de entrenamiento
-8. Al terminar cada lote, se ordenan los `k` vecinos finales y se convierten sus distancias cuadradas a distancia euclidiana normal para la salida pública de `vecinos_mas_cercanos()`
-9. Python concatena los resultados de todos los lotes y mantiene el orden original de `datos_consulta`
+La capa Python aplicará la raíz cuadrada únicamente a las distancias seleccionadas y devolverá `numpy.ndarray` para preservar el contrato público
 
-La división por lotes y bloques no puede cambiar los resultados. La fusión debe conservar el orden por distancia ascendente y, en igualdad de distancia, por menor índice de entrenamiento. La matriz completa `Q x N` no debe ser necesaria en la versión final, porque el consumo temporal de memoria debe estar acotado por el tamaño de los lotes, los bloques y los candidatos Top-K
+La ordenación conservará distancia ascendente y menor índice de entrenamiento en empate
 
 ## 9. Flujo de `predecir()`
 
@@ -146,7 +154,7 @@ En la referencia CPU actual, `predecir_knn` sigue este flujo:
 
 `votacion_uniforme` recibe únicamente `etiquetas_vecinos`, realiza votación uniforme y resuelve los empates por la etiqueta original menor
 
-En el backend CUDA, `predecir()` reutilizará la búsqueda de vecinos y recuperará las etiquetas originales correspondientes a los índices antes de invocar `votacion_uniforme`, igual que el backend CPU
+En la integración nativa, `predecir()` invocará `knn_cuda::predecir_knn` mediante el Dispatcher y conservará las mismas etiquetas originales y reglas deterministas que la referencia NumPy
 
 Cuando sea posible, `predecir()` debe evitar calcular raíces cuadradas, conservar matrices temporales que no necesita y realizar únicamente las transferencias necesarias para obtener las etiquetas finales, la búsqueda seguirá siendo exacta aunque se omitan de la ruta de predicción los datos de distancia que no participan en la votación
 
@@ -159,38 +167,35 @@ Las reglas de orden y desempate son parte del contrato funcional:
 - Si dos o más etiquetas tienen el mismo número de votos, gana la etiqueta original menor
 - El comportamiento completo debe ser determinista bajo las mismas entradas y configuración
 
-El orden por índice debe aplicarse tanto al ordenar resultados finales como al fusionar candidatos parciales. No se debe depender de un orden incidental producido por el paralelismo de CUDA
+El orden por índice debe aplicarse al seleccionar resultados finales. No se debe depender de un orden incidental producido por el paralelismo de CUDA
 
 ## 11. Capas
 
 La separación inicial de módulos será la siguiente:
 
 - `clasificador.py` conserva el estado del clasificador y presenta la API pública
-- `_validacion.py` valida las entradas públicas y los parámetros
-- `_operaciones.py` carga y encapsula los operadores registrados de PyTorch
 - `referencia.py` contiene la referencia CPU en NumPy para pruebas y comparación
-- `operaciones_knn.cpp` registra y valida los operadores C++/CUDA y coordina sus lanzamientos
-- `distancias_kernel.cu` calcula las distancias euclidianas cuadradas
-- `seleccion_top_k_kernel.cu` selecciona y fusiona vecinos locales y globales
-- `votacion_uniforme.cu` realiza la votación sobre etiquetas originales
+- `src/cpp/operadores.cpp` implementa los operadores CPU
+- `src/cpp/registro.cpp` define los esquemas y registra implementaciones por dispositivo
+- `src/cuda/` contiene las implementaciones CUDA de los operadores
 
 CUDA no conoce Python ni conserva estado entre invocaciones. C++ tampoco conserva el estado del clasificador y recibe tensores y parámetros de una operación. `votacion_uniforme` recibe directamente las etiquetas originales y devuelve la predicción original
 
 ## 12. Operadores internos
 
-Los operadores internos iniciales serán:
+Los operadores internos vigentes son:
 
 ### `distancias_l2_cuadradas`
 
-- **Entradas:** `datos_consulta` y `datos_entrenamiento` contiguos con formas compatibles `[Q, D]` y `[N, D]`, ambos en `float32` y en el mismo dispositivo CUDA
-- **Salida:** distancias euclidianas cuadradas para el bloque de consultas y el bloque de entrenamiento que se estén procesando
+- **Entradas:** `datos_consulta` y `datos_entrenamiento` con formas compatibles `[Q, D]` y `[N, D]`, ambos en `float32` y en el mismo dispositivo CPU o CUDA
+- **Salida:** distancias euclidianas cuadradas con forma `[Q, N]`
 - **Responsabilidad:** calcular la suma de diferencias al cuadrado por dimensión. No ordena vecinos, no aplica raíz cuadrada y no conoce etiquetas
 
-### `buscar_vecinos_knn`
+### `seleccionar_top_k`
 
-- **Entradas:** un lote de `datos_consulta`, `datos_entrenamiento`, `k` y `tamano_bloque_entrenamiento`, con los tensores contiguos en `float32` y en el mismo dispositivo CUDA
-- **Salidas:** índices `int64` y distancias cuadradas de los `k` vecinos por consulta, ordenados según las reglas de desempate
-- **Responsabilidad:** recorrer `datos_entrenamiento` por bloques, calcular distancias, obtener Top-K local, fusionar Top-K global y garantizar que ninguna muestra quede sin revisar
+- **Entradas:** matriz de distancias `[Q, N]` en `float32` y `k`
+- **Salidas:** distancias seleccionadas `float32` e índices `int64` con forma `[Q, k]`
+- **Responsabilidad:** seleccionar vecinos por distancia ascendente y menor índice original en empate
 
 ### `votacion_uniforme`
 
@@ -202,18 +207,17 @@ Los operadores internos iniciales serán:
 
 El Dispatcher resuelve la implementación CPU C++ o CUDA de `votacion_uniforme` bajo el mismo contrato lógico
 
-Estos operadores son sin estado. Python conserva las referencias a los tensores de entrenamiento y etiquetas, y los pasa en cada llamada cuando corresponde
+Estos operadores son sin estado. Python conserva las copias NumPy de entrenamiento y etiquetas, y la futura integración preparará tensores internos para el dispositivo efectivo
 
 ## 13. Estrategia progresiva
 
 La implementación se desarrollará en etapas verificables:
 
-1. **Referencia CPU NumPy:** definir el comportamiento correcto, las formas, la ordenación y los desempates sin depender de CUDA
-2. **Extensión C++ CPU de PyTorch:** registrar operadores propios, validar el intercambio Python → PyTorch → C++ y comparar sus salidas con la referencia NumPy sin utilizar CUDA
-3. **Matriz CUDA completa con selección temporal:** construir una versión sencilla que materialice temporalmente la matriz de distancias para validar la integración y los kernels
-4. **Selección CUDA propia:** sustituir la selección temporal por una selección paralela de candidatos con reglas deterministas
-5. **Procesamiento por bloques:** introducir `tamano_lote_consultas` y `tamano_bloque_entrenamiento`, fusionar resultados parciales y eliminar la necesidad de la matriz completa `Q x N`
-6. **Optimización avanzada:** mejorar acceso a memoria, ocupación, uso de memoria compartida y organización de kernels únicamente cuando existan pruebas de corrección y benchmarks que justifiquen el cambio
+1. **Referencia CPU NumPy:** define el comportamiento correcto, las formas, la ordenación y los desempates
+2. **Backend C++ CPU:** implementa y valida los cuatro operadores bajo el Dispatcher
+3. **Backend CUDA:** implementa y valida los mismos cuatro operadores bajo los mismos esquemas
+4. **Integración de Fase 4:** conectará `ClasificadorKNNCUDA` con el backend nativo sin ampliar todavía sus tipos públicos de entrada
+5. **Optimización posterior:** podrá introducir procesamiento por bloques y optimizaciones de kernel solo con pruebas de corrección y benchmarks que las justifiquen
 
 La progresión mantiene una referencia funcional disponible en todas las etapas. El orden de prioridad es primero corrección y después rendimiento
 
@@ -222,7 +226,7 @@ La progresión mantiene una referencia funcional disponible en todas las etapas.
 Las pruebas se dividirán entre entornos locales y CUDA:
 
 - Las pruebas locales deben ejecutarse sin GPU y utilizar la referencia CPU en NumPy
-- Las pruebas CUDA se ejecutarán en Google Colab con GPU NVIDIA
+- Las pruebas CUDA se ejecutarán en cualquier entorno CUDA compatible y Google Colab será una opción de validación, no una dependencia
 - La comparación primaria será contra NumPy, que definirá los valores esperados de distancia, índices y predicciones bajo las reglas del proyecto
 - La comparación secundaria será contra scikit-learn en casos controlados compatibles con su configuración
 
@@ -278,9 +282,9 @@ La primera versión tendrá estas limitaciones explícitas:
 - No habrá métricas arbitrarias; se utilizará la distancia euclidiana cuadrada definida
 - No habrá etiquetas de texto
 - No habrá autograd ni integración de gradientes
-- No habrá backend CPU dentro de la extensión CUDA
+- La extensión nativa conserva implementaciones CPU C++ y CUDA bajo los mismos esquemas del Dispatcher
 
-El desarrollo local sin GPU se apoyará en la referencia NumPy y en las pruebas que no requieran la extensión CUDA. Esto no convierte la extensión CUDA en un motor CPU alternativo
+El desarrollo local sin GPU puede utilizar el backend CPU C++ y las pruebas CPU sin requerir CUDA
 
 ## 17. Arquitectura objetivo de carpetas
 
@@ -288,56 +292,37 @@ La estructura objetivo completa será:
 
 ```text
 KNN-Cuda/
-├── .github/
 ├── src/
-│   ├── python/
-│   │   └── knn_cuda/
-│   │       ├── __init__.py       # API pública del paquete
-│   │       ├── clasificador.py   # ClasificadorKNNCUDA y estado Python
-│   │       ├── _validacion.py    # Validación de entradas y parámetros
-│   │       ├── _operaciones.py   # Carga y encapsulado de operadores
-│   │       └── referencia.py     # Referencia CPU en NumPy
+│   ├── python/knn_cuda/
+│   │   ├── __init__.py
+│   │   ├── clasificador.py
+│   │   └── referencia.py
 │   ├── cpp/
-│   │   ├── include/
-│   │   │   └── knn_cuda/
-│   │   │       └── operaciones.h # Declaraciones de operadores
-│   │   └── operaciones_knn.cpp   # Registro y validación de operadores
+│   │   ├── include/knn_cuda/operadores.h
+│   │   ├── operadores.cpp
+│   │   └── registro.cpp
 │   └── cuda/
-│       ├── include/
-│       │   └── knn_cuda/
-│       │       └── kernels.cuh   # Declaraciones de kernels
-│       ├── distancias_kernel.cu       # Distancia euclidiana cuadrada
-│       ├── seleccion_top_k_kernel.cu  # Selección y fusión Top-K
-│       └── votacion_kernel.cu         # Votación uniforme
+│       ├── include/knn_cuda/operadores_cuda.h
+│       ├── distancias_l2_cuadradas.cu
+│       ├── seleccionar_top_k.cu
+│       ├── votacion_uniforme.cu
+│       └── predecir_knn.cu
 ├── tests/
 │   ├── cpu/
-│   │   ├── test_referencia.py    # Pruebas de la referencia NumPy
-│   │   ├── test_validacion.py    # Pruebas de validación
-│   │   └── test_etiquetas.py     # Pruebas de etiquetas
+│   │   ├── test_referencia.py
+│   │   ├── test_clasificador.py
+│   │   └── test_backend_cpp.py
 │   └── cuda/
-│       ├── test_distancias.py    # Pruebas de distancias
-│       ├── test_seleccion_top_k.py # Pruebas de selección Top-K
-│       ├── test_votacion.py      # Pruebas de votación
-│       └── test_clasificador.py  # Pruebas del clasificador
-├── benchmarks/
-│   ├── medicion_cpu.py           # Mediciones de referencia CPU
-│   ├── medicion_cuda.py          # Mediciones CUDA
-│   └── configuraciones.py        # Configuraciones de medición
-├── data/                         # Datos pequeños o referencias reproducibles
+│       ├── test_distancias_l2_cuadradas_cuda.py
+│       ├── test_seleccionar_top_k_cuda.py
+│       ├── test_votacion_uniforme_cuda.py
+│       └── test_predecir_knn_cuda.py
 ├── docs/
-│   ├── architecture.md           # Arquitectura inicial
-│   ├── requirements.md           # Requisitos iniciales
-│   └── software_design.md        # Diseño de software
-├── examples/                     # Ejemplos de uso de la API
-├── notebooks/                    # Exploración y ejecución en Google Colab
-├── pyproject.toml                # Configuración del paquete y compilación
-├── requirements.txt              # Dependencias del entorno
-├── .gitignore                    # Archivos excluidos del control de versiones
-├── LICENSE                       # Licencia del proyecto
-└── README.md                     # Introducción y guía de inicio
+├── pyproject.toml
+└── setup.py
 ```
 
-La estructura separa la API Python, la extensión C++, los kernels CUDA, las pruebas CPU, las pruebas CUDA, los benchmarks, la documentación, los ejemplos y los notebooks. Los nombres de archivos reflejan responsabilidades; no implican que deban implementarse todos los módulos en una única etapa
+La estructura separa la API Python, la extensión C++, los kernels CUDA, las pruebas CPU, las pruebas CUDA y la documentación. Los nombres de archivos reflejan responsabilidades
 
 ## 18. Reglas arquitectónicas
 

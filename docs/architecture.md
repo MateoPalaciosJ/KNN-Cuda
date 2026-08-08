@@ -11,15 +11,16 @@ La prioridad inicial es obtener resultados correctos, reproducibles y comparable
 El flujo de ejecución previsto es:
 
 ```text
-Python → PyTorch → extensión C++/CUDA → dispatcher de PyTorch → CPU o CUDA
+Python → ClasificadorKNNCUDA → PyTorch → extensión C++/CUDA → dispatcher de PyTorch → CPU C++ o CUDA
 ```
 
 1. Python recibe o prepara los datos, configura los parámetros de KNN y expone una API de alto nivel
 2. PyTorch proporciona la interfaz de tensores, la infraestructura de extensiones nativas y el dispatcher de operadores
 3. La extensión C++ recibe tensores y parámetros, valida sus propiedades y ejecuta la implementación disponible para el dispositivo
-4. Durante la Fase 2, los operadores se ejecutan únicamente en CPU mediante C++
-5. Durante la Fase 3, la misma arquitectura incorpora implementaciones CUDA y kernels para GPU
-6. El resultado vuelve a Python mediante PyTorch en un formato utilizable para el usuario
+4. La Fase 2 implementó operadores CPU mediante C++
+5. La Fase 3 añadió implementaciones CUDA y kernels para GPU bajo los mismos esquemas
+6. La Fase 4 integrará el clasificador público sin crear una segunda API
+7. El resultado vuelve a Python mediante PyTorch en un formato utilizable para el usuario
 
 No se utilizará pybind11 como estrategia independiente ni existirá un segundo sistema de binding
 
@@ -28,7 +29,7 @@ No se utilizará pybind11 como estrategia independiente ni existirá un segundo 
 - Proporcionar una API sencilla para entrenar o preparar el conjunto de referencia y realizar predicciones.
 - Recibir los datos de entrada, las etiquetas y el valor de `k`.
 - Comprobar las condiciones de alto nivel: dimensiones compatibles, tipos esperados, valores válidos de `k` y consistencia entre muestras y etiquetas.
-- Gestionar la conversión a `float32` cuando sea necesario y documentar claramente esa conversión.
+- Rechazar dtype incompatible sin conversiones silenciosas y preparar tensores internos a partir de entradas públicas válidas
 - Preparar los buffers que se entregarán a la extensión C++ y devolver las predicciones en una estructura familiar para el ecosistema Python.
 - Exponer errores de forma comprensible, sin ocultar fallos de la capa nativa o de CUDA.
 - Facilitar scripts, notebooks y pruebas de comparación contra scikit-learn.
@@ -46,7 +47,7 @@ La capa Python no debe contener la lógica intensiva de cálculo de distancias. 
 - Sincronizar la ejecución cuando sea necesario antes de devolver resultados.
 - Mantener aislados los detalles de CUDA de la interfaz Python.
 
-La extensión C++ debe ser una capa de coordinación y seguridad. Durante la Fase 2 ejecutará operadores CPU y durante la Fase 3 coordinará las implementaciones CUDA sin cambiar la API pública
+La extensión C++ es una capa de coordinación y seguridad. Ejecuta operadores CPU y CUDA bajo el Dispatcher sin cambiar la API pública
 
 ## 5. Responsabilidades de los kernels CUDA
 
@@ -65,11 +66,11 @@ La primera implementación puede separar las fases de cálculo, selección y vot
 
 La infraestructura oficial de extensiones utilizará PyTorch en todas las fases nativas
 
-La Fase 2 utilizará extensiones C++ de PyTorch para registrar operadores CPU, validar llamadas Python → PyTorch → C++ e intercambiar tensores sin utilizar GPU ni CUDA
+La Fase 2 utilizó extensiones C++ de PyTorch para registrar operadores CPU, validar llamadas Python → PyTorch → C++ e intercambiar tensores sin utilizar GPU ni CUDA
 
-La Fase 3 extenderá esta misma infraestructura con implementaciones CUDA y despacho según el dispositivo, sin crear una segunda API pública ni sustituir la referencia NumPy como fuente primaria de corrección
+La Fase 3 extendió esta misma infraestructura con implementaciones CUDA y despacho según el dispositivo, sin crear una segunda API pública ni sustituir la referencia NumPy como fuente primaria de corrección
 
-La compilación C++ de la Fase 2 utilizará `CppExtension` y la Fase 3 evolucionará a `CUDAExtension` cuando se incorporen fuentes CUDA
+La compilación CPU utiliza `CppExtension` y la compilación con CUDA utiliza `CUDAExtension` cuando existe un toolkit compatible
 
 ## 6. Estrategia de validación
 
@@ -135,7 +136,7 @@ La estructura es un objetivo de organización: los nombres concretos de módulos
 - **Métrica:** distancia euclidiana cuadrada, evitando la raíz cuadrada porque no cambia el orden de las distancias.
 - **Tipo de datos:** `float32`, para alinear el formato con el procesamiento habitual en GPU y mantener controlado el consumo de memoria.
 - **Tarea inicial:** clasificación mediante las etiquetas de los vecinos y votación mayoritaria.
-- **Ejecución CUDA:** Google Colab será el entorno inicial para ejecutar con acceso a una GPU CUDA y facilitar experimentos reproducibles.
+- **Ejecución CUDA:** cualquier entorno con GPU NVIDIA, PyTorch y CUDA Toolkit compatibles, Google Colab es una opción de validación y no una dependencia
 - **Desarrollo local:** VS Code será el entorno de trabajo; Git gestionará el historial local y GitHub alojará el repositorio y la colaboración.
 
 Estas decisiones describen el alcance inicial y no impiden futuras extensiones, como regresión, otras métricas, procesamiento por lotes o estrategias de búsqueda más eficientes.

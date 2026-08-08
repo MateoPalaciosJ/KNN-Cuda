@@ -12,7 +12,7 @@ NumPy conserva el papel de referencia primaria de corrección y el clasificador 
 
 La ruta nativa oficial es Python → PyTorch → `CppExtension` → operadores propios → implementación CPU C++
 
-La Fase 3 añadirá implementaciones CUDA dentro de esta misma arquitectura sin crear una segunda estrategia de binding ni cambiar la API pública
+La Fase 3 añadió implementaciones CUDA dentro de esta misma arquitectura sin crear una segunda estrategia de binding ni cambiar la API pública
 
 El módulo interno compilado se llama `knn_cuda._backend_cpp` y su importación registra los operadores de esta fase
 
@@ -45,9 +45,9 @@ La implementación utiliza operaciones ATen para expresar directamente la resta 
 
 NumPy sigue siendo la referencia primaria de corrección y las pruebas comparan esta operación con `distancias_l2_cuadradas` del motor de referencia
 
-El esquema se define una sola vez y su implementación se registra para CPU, por lo que una fase posterior podrá registrar una implementación CUDA bajo el mismo esquema
+El esquema se define una sola vez y actualmente tiene implementaciones CPU y CUDA bajo el mismo Dispatcher
 
-No se han incorporado optimizaciones, bloques, paralelismo manual ni kernels CUDA
+La implementación CPU no incorpora optimizaciones, bloques ni paralelismo manual
 
 `seleccionar_top_k` es la segunda operación KNN real implementada en C++ durante la Fase 2
 
@@ -57,7 +57,7 @@ La operación ordena cada fila de forma ascendente mediante una ordenación esta
 
 La implementación se ejecuta solo en CPU, no requiere contigüidad y se compara con `seleccionar_top_k` de NumPy como referencia primaria
 
-CUDA permanece pendiente y podrá registrar su propia implementación bajo el mismo esquema
+CUDA ya registra su propia implementación bajo el mismo esquema
 
 `votacion_uniforme` es la tercera operación KNN real implementada en C++ durante la Fase 2
 
@@ -65,7 +65,7 @@ Recibe directamente `etiquetas_vecinos` originales con forma `[Q, K]`, aplica un
 
 La operación ordena las etiquetas de cada consulta, cuenta sus valores distintos y resuelve los empates por la etiqueta original numéricamente menor
 
-NumPy sigue siendo la referencia primaria y CPU es el único backend implementado mientras CUDA permanece pendiente
+NumPy sigue siendo la referencia primaria y CPU C++ convive con CUDA bajo los mismos esquemas
 
 ## Validaciones
 
@@ -99,7 +99,7 @@ La operación conserva los desempates deterministas de distancia y votación, pr
 
 El pipeline C++ continúa siendo interno y `ClasificadorKNNCUDA` sigue utilizando la referencia NumPy
 
-No existe CUDA en esta fase y la futura implementación CUDA reutilizará el mismo esquema de operador
+La implementación CUDA actual reutiliza el mismo esquema de operador
 
 ## Compilación desde fuente
 
@@ -125,10 +125,10 @@ La verificación completa ejecuta primero esas pruebas y después `python -m pyt
 
 `ClasificadorKNNCUDA` todavía no utiliza el backend C++
 
-CUDA, kernels y GPU siguen pendientes
+Los operadores nativos actuales tienen implementaciones CUDA validadas. La integración de `ClasificadorKNNCUDA` con el backend nativo continúa pendiente
 
-El temporal conceptual `[Q, N, D]` de `distancias_l2_cuadradas` continúa siendo un riesgo de memoria pendiente para las fases de optimización y CUDA
+El temporal conceptual `[Q, N, D]` de `distancias_l2_cuadradas` CPU continúa siendo un riesgo de memoria pendiente para fases de optimización
 
 No existe una API pública adicional
 
-La Fase 3 reutilizará el registro de operadores, la configuración de extensión y la separación entre contratos, implementación y registro para añadir implementaciones CUDA
+La Fase 3 reutilizó el registro de operadores, la configuración de extensión y la separación entre contratos, implementación y registro para añadir implementaciones CUDA

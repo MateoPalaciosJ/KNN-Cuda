@@ -77,6 +77,21 @@ La opcion `--traza` exporta una traza compatible con Chrome Trace o Perfetto y n
 
 El profiler mide la llamada completa del operador y permite separar eventos registrados, pero no sustituye Nsight Compute para conocer ocupacion, registros por thread, spills, eficiencia de coalescing, contadores de memoria o conflictos de shared memory
 
+## Profiling de seleccionar Top-K CUDA
+
+`perfilar_seleccionar_top_k_cuda` captura una llamada real a `torch.ops.knn_cuda.seleccionar_top_k` despues de calentamiento y usa por defecto el escenario grande de la linea base
+
+```powershell
+python -m benchmarks.perfilar_seleccionar_top_k_cuda
+python -m benchmarks.perfilar_seleccionar_top_k_cuda --traza seleccionar_top_k_cuda.json
+```
+
+El perfil muestra las actividades CPU y CUDA de validacion, reserva de salidas, inicializacion de la mascara mediante `zeros`, operaciones de memoria visibles y el kernel `seleccionar_top_k_kernel` cuando el runtime conserva ese nombre
+
+La salida informa memoria CUDA asignada y pico adicional de una llamada, mientras que la traza permite revisar la secuencia y el numero de lanzamientos CUDA
+
+Nsight Compute puede complementar este perfil con ocupacion, registros, spills, shared memory, eficiencia de memoria e instrucciones sin convertirse en dependencia del proyecto
+
 ## Memoria CUDA
 
 El benchmark de operadores informa memoria CUDA asignada y pico adicional mediante las APIs de memoria de PyTorch

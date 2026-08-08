@@ -9,10 +9,10 @@ import torch
 from benchmarks.medicion import ESCENARIOS, generar_datos, obtener_escenarios
 from benchmarks.perfilado import ejecutar_perfilado_cuda, validar_opciones_perfilado
 from knn_cuda._backend_nativo import tiene_backend_cuda
-from knn_cuda.referencia import distancias_l2_cuadradas
+from knn_cuda.referencia import distancias_l2_cuadradas, seleccionar_top_k
 
 
-def perfilar_distancias(
+def perfilar_seleccionar_top_k(
     nombre_escenario: str,
     calentamiento: int,
     filas: int,
@@ -20,7 +20,7 @@ def perfilar_distancias(
 ) -> None:
     validar_opciones_perfilado(calentamiento, filas)
     if not torch.cuda.is_available():
-        print("CUDA no esta disponible, el profiling de distancias se omitio")
+        print("CUDA no esta disponible, el profiling de seleccionar_top_k se omitio")
         return
     if not tiene_backend_cuda():
         print("el backend CUDA de KNN-Cuda no esta registrado, el profiling se omitio")
@@ -28,25 +28,24 @@ def perfilar_distancias(
 
     escenario = obtener_escenarios(nombre_escenario)[0]
     datos = generar_datos(escenario)
-    dispositivo = torch.device("cuda", torch.cuda.current_device())
-    datos_consulta = torch.from_numpy(datos.datos_consulta).to(dispositivo)
-    datos_entrenamiento = torch.from_numpy(datos.datos_entrenamiento).to(dispositivo)
-    esperado = distancias_l2_cuadradas(
+    distancias_numpy = distancias_l2_cuadradas(
         datos.datos_consulta, datos.datos_entrenamiento
     )
+    distancias_esperadas, indices_esperados = seleccionar_top_k(
+        distancias_numpy, escenario.numero_vecinos
+    )
+    dispositivo = torch.device("cuda", torch.cuda.current_device())
+    distancias = torch.from_numpy(distancias_numpy).to(dispositivo)
 
-    resultado = torch.ops.knn_cuda.distancias_l2_cuadradas(
-        datos_consulta, datos_entrenamiento
+    resultado = torch.ops.knn_cuda.seleccionar_top_k(
+        distancias, escenario.numero_vecinos
     )
-    np.testing.assert_allclose(
-        resultado.cpu().numpy(), esperado, rtol=1e-4, atol=1e-5
-    )
+    np.testing.assert_array_equal(resultado[0].cpu().numpy(), distancias_esperadas)
+    np.testing.assert_array_equal(resultado[1].cpu().numpy(), indices_esperados)
     del resultado
 
     for _ in range(calentamiento):
-        torch.ops.knn_cuda.distancias_l2_cuadradas(
-            datos_consulta, datos_entrenamiento
-        )
+        torch.ops.knn_cuda.seleccionar_top_k(distancias, escenario.numero_vecinos)
     torch.cuda.synchronize(dispositivo)
 
     print(
@@ -55,15 +54,12 @@ def perfilar_distancias(
         f"k={escenario.numero_vecinos}"
     )
     print("llamadas perfiladas=1")
-    print(
-        f"consulta_contigua={datos_consulta.is_contiguous()} "
-        f"entrenamiento_contiguo={datos_entrenamiento.is_contiguous()}"
-    )
+    print(f"distancias_contiguas={distancias.is_contiguous()}")
     resultado, memoria = ejecutar_perfilado_cuda(
-        lambda: torch.ops.knn_cuda.distancias_l2_cuadradas(
-            datos_consulta, datos_entrenamiento
+        lambda: torch.ops.knn_cuda.seleccionar_top_k(
+            distancias, escenario.numero_vecinos
         ),
-        "knn_cuda::distancias_l2_cuadradas",
+        "knn_cuda::seleccionar_top_k",
         dispositivo,
         filas,
         ruta_traza,
@@ -73,7 +69,6 @@ def perfilar_distancias(
         f"asignada={memoria.asignada_mib:.2f} "
         f"pico_adicional={memoria.pico_adicional_mib:.2f}"
     )
-
     del resultado
 
 
@@ -86,7 +81,7 @@ def main() -> None:
     argumentos.add_argument("--filas", type=int, default=30)
     argumentos.add_argument("--traza", type=Path)
     opciones = argumentos.parse_args()
-    perfilar_distancias(
+    perfilar_seleccionar_top_k(
         opciones.escenario,
         opciones.calentamiento,
         opciones.filas,

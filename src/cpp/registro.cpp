@@ -33,6 +33,7 @@ TORCH_LIBRARY_IMPL(knn_cuda, CPU, modulo) {
 #ifdef KNN_CUDA_CON_CUDA
 TORCH_LIBRARY_IMPL(knn_cuda, CUDA, modulo) {
     modulo.impl("distancias_l2_cuadradas", &knn_cuda::distancias_l2_cuadradas_cuda);
+    modulo.impl("seleccionar_top_k", &knn_cuda::seleccionar_top_k_cuda);
 }
 #endif
 

@@ -22,7 +22,10 @@ fuentes_cpp = [
     "src/cpp/operadores.cpp",
     "src/cpp/registro.cpp",
 ]
-fuente_cuda = "src/cuda/distancias_l2_cuadradas.cu"
+fuentes_cuda = [
+    "src/cuda/distancias_l2_cuadradas.cu",
+    "src/cuda/seleccionar_top_k.cu",
+]
 directorios_include = [
     str(raiz_proyecto / "src" / "cpp" / "include"),
     str(raiz_proyecto / "src" / "cuda" / "include"),
@@ -75,9 +78,7 @@ def crear_extension_nativa():
             "La version del CUDA Toolkit no coincide con la version CUDA de PyTorch"
         )
 
-    argumentos["sources"] = fuentes_cpp + [
-        fuente_cuda,
-    ]
+    argumentos["sources"] = fuentes_cpp + fuentes_cuda
     argumentos["define_macros"] = [("KNN_CUDA_CON_CUDA", "1")]
     return CUDAExtension(**argumentos)
 

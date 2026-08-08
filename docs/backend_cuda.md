@@ -4,13 +4,13 @@
 
 La Fase 3 añade implementaciones CUDA reales detrás de los esquemas de operadores ya aprobados en CPU
 
-La primera implementación es `distancias_l2_cuadradas` y conserva NumPy como referencia primaria de corrección
+Las primeras implementaciones son `distancias_l2_cuadradas` y `seleccionar_top_k` y conservan NumPy como referencia primaria de corrección
 
 ## Arquitectura
 
 La ruta nativa se mantiene como Python → PyTorch → `CUDAExtension` → dispatcher de PyTorch → implementación CUDA
 
-El esquema `knn_cuda::distancias_l2_cuadradas` es único y el dispatcher selecciona la implementación CPU o CUDA según el dispositivo de los tensores de entrada
+Los esquemas `knn_cuda::distancias_l2_cuadradas` y `knn_cuda::seleccionar_top_k` son únicos y el dispatcher selecciona la implementación CPU o CUDA según el dispositivo de los tensores de entrada
 
 La implementación CPU C++ continúa disponible y no se modifica al añadir CUDA
 
@@ -18,6 +18,7 @@ La implementación CPU C++ continúa disponible y no se modifica al añadir CUDA
 
 - `src/cuda/include/knn_cuda/operadores_cuda.h` declara los contratos internos de CUDA
 - `src/cuda/distancias_l2_cuadradas.cu` contiene el launcher y el kernel CUDA
+- `src/cuda/seleccionar_top_k.cu` contiene el launcher y el kernel CUDA de selección
 - `src/cpp/registro.cpp` registra la implementación CUDA del mismo esquema cuando la extensión se compila con CUDA
 - `setup.py` elige `CppExtension` o `CUDAExtension` según la disponibilidad de un toolkit compatible
 
@@ -38,6 +39,26 @@ La salida se crea con PyTorch en el mismo dispositivo CUDA y tiene forma `[Q, N]
 El kernel acumula cada distancia directamente y no crea un temporal `[Q, N, D]`
 
 La implementación acepta vistas no contiguas mediante `contiguous()` explícito para cada entrada solo cuando PyTorch requiere una copia, sin modificar los tensores originales
+
+## Selección Top-K
+
+`seleccionar_top_k` es el segundo operador KNN implementado para CUDA y recibe una matriz CUDA `float32` con forma `[Q, N]` junto con `k`
+
+Devuelve distancias seleccionadas `float32` e índices `int64` con forma `[Q, k]` y conserva el orden ascendente de distancia
+
+El kernel asigna un bloque de 256 threads a cada consulta y repite una reducción paralela para cada posición de salida
+
+Cada thread recorre una parte de la fila, propone su mejor candidato y la reducción de shared memory compara explícitamente los pares distancia e índice
+
+Un candidato es mejor cuando su distancia es menor o cuando la distancia es igual y su índice original es menor, por lo que los empates son deterministas
+
+Un tensor temporal booleano `[Q, N]` registra los índices ya elegidos y evita seleccionar el mismo vecino dos veces sin modificar `distancias`
+
+La implementación acepta vistas no contiguas mediante `contiguous()` interno cuando es necesario y lanza el kernel en el stream CUDA actual
+
+La operación rechaza tensores fuera de CUDA, dtype distinto de `float32`, dimensiones distintas de dos, matrices vacías, valores no finitos y valores de `k` fuera del intervalo de `1` a `N`
+
+Esta primera versión prioriza corrección y claridad sobre rendimiento, por lo que repite una reducción completa por cada uno de los `k` vecinos y todavía no usa tiling ni primitivas de warp
 
 ## Streams y errores
 
@@ -109,7 +130,7 @@ Un modo explícito de build `AUTO`, `CPU` y `CUDA` es una mejora futura recomend
 
 ## Pruebas
 
-Las pruebas CUDA viven en `tests/cuda/test_distancias_l2_cuadradas_cuda.py` y se omiten limpiamente cuando el runtime CUDA no está disponible
+Las pruebas CUDA viven en `tests/cuda/` y se omiten limpiamente cuando el runtime CUDA no está disponible
 
 En un entorno CUDA válido comparan el kernel con la referencia NumPy y con la implementación C++ CPU usando `rtol=1e-4` y `atol=1e-5`
 
@@ -119,6 +140,6 @@ Google Colab es un entorno de desarrollo y validación opcional, no una dependen
 
 ## Limitaciones pendientes
 
-Solo `distancias_l2_cuadradas` tiene implementación CUDA
+`distancias_l2_cuadradas` y `seleccionar_top_k` tienen implementación CUDA
 
-`seleccionar_top_k`, `votacion_uniforme`, `predecir_knn`, la integración de `ClasificadorKNNCUDA`, los benchmarks y las optimizaciones de kernel permanecen pendientes
+`votacion_uniforme`, `predecir_knn`, la integración de `ClasificadorKNNCUDA`, los benchmarks y las optimizaciones de kernel permanecen pendientes

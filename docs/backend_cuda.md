@@ -26,13 +26,21 @@ La implementación CPU C++ continúa disponible y no se modifica al añadir CUDA
 
 ## Kernel de distancias
 
-El kernel asigna un hilo a cada par consulta y muestra de entrenamiento
+El kernel usa una baldosa bidimensional de 16 consultas por 16 muestras con un bloque CUDA de 16 por 16 threads
 
-Un índice lineal se transforma en `indice_consulta` e `indice_muestra`, el hilo recorre las características, acumula la diferencia al cuadrado en `float32` y escribe una sola posición de salida `[Q, N]`
+Cada thread representa una salida `[q, n]` dentro de la baldosa y conserva un acumulador `float32` privado
 
-La primera versión usa 256 hilos por bloque y calcula el número de bloques como el redondeo hacia arriba de `Q × N / 256`
+El grid usa `ceil(N / 16)` bloques en X y `ceil(Q / 16)` bloques en Y, por lo que cubre dimensiones arbitrarias con comprobaciones de borde
 
-No utiliza shared memory, tiling, vectorización, Tensor Cores ni sincronización global
+Cada iteración carga un segmento de 32 características en dos arreglos de shared memory con forma conceptual `[32, 16]`, uno para consultas y otro para entrenamiento
+
+Los 256 threads cargan las filas globales de cada entrada de forma contigua cuando el borde lo permite, reutilizan la baldosa de consultas entre 16 muestras y la baldosa de entrenamiento entre 16 consultas
+
+La disposición de shared memory usa característica como primera dimensión para que los threads que recorren muestras lean posiciones contiguas y evita conflictos evitables durante el cálculo
+
+Se usan dos `__syncthreads()` por segmento, uno después de cargar shared memory y otro antes de sobrescribirla en el siguiente segmento
+
+Cada thread acumula segmentos y características en orden ascendente, no usa reducciones de D, no crea temporales globales `[Q, N, D]` y no usa Tensor Cores ni sincronización global
 
 ## Memoria y contigüidad
 

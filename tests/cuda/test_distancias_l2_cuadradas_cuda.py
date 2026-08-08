@@ -132,3 +132,23 @@ def test_distancias_l2_cuadradas_cuda_funciona_con_mas_de_un_bloque() -> None:
 
     assert distancias.shape == (17, 17)
     assert torch.equal(distancias, torch.zeros((17, 17), dtype=torch.float32, device="cuda"))
+
+
+def test_distancias_l2_cuadradas_cuda_maneja_bordes_de_baldosas_y_caracteristicas() -> None:
+    datos_consulta_numpy = np.arange(17 * 33, dtype=np.float32).reshape(17, 33)
+    datos_entrenamiento_numpy = np.arange(
+        19 * 33, dtype=np.float32
+    ).reshape(19, 33)
+    esperado = distancias_l2_cuadradas(
+        datos_consulta_numpy, datos_entrenamiento_numpy
+    )
+
+    distancias_cuda = torch.ops.knn_cuda.distancias_l2_cuadradas(
+        torch.from_numpy(datos_consulta_numpy).cuda(),
+        torch.from_numpy(datos_entrenamiento_numpy).cuda(),
+    )
+
+    assert distancias_cuda.shape == (17, 19)
+    np.testing.assert_allclose(
+        distancias_cuda.cpu().numpy(), esperado, rtol=1e-4, atol=1e-5
+    )

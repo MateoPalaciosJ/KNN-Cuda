@@ -4,13 +4,13 @@
 
 La Fase 3 añade implementaciones CUDA reales detrás de los esquemas de operadores ya aprobados en CPU
 
-Las primeras implementaciones son `distancias_l2_cuadradas` y `seleccionar_top_k` y conservan NumPy como referencia primaria de corrección
+Las primeras implementaciones son `distancias_l2_cuadradas`, `seleccionar_top_k` y `votacion_uniforme` y conservan NumPy como referencia primaria de corrección
 
 ## Arquitectura
 
 La ruta nativa se mantiene como Python → PyTorch → `CUDAExtension` → dispatcher de PyTorch → implementación CUDA
 
-Los esquemas `knn_cuda::distancias_l2_cuadradas` y `knn_cuda::seleccionar_top_k` son únicos y el dispatcher selecciona la implementación CPU o CUDA según el dispositivo de los tensores de entrada
+Los esquemas `knn_cuda::distancias_l2_cuadradas`, `knn_cuda::seleccionar_top_k` y `knn_cuda::votacion_uniforme` son únicos y el dispatcher selecciona la implementación CPU o CUDA según el dispositivo de los tensores de entrada
 
 La implementación CPU C++ continúa disponible y no se modifica al añadir CUDA
 
@@ -19,6 +19,7 @@ La implementación CPU C++ continúa disponible y no se modifica al añadir CUDA
 - `src/cuda/include/knn_cuda/operadores_cuda.h` declara los contratos internos de CUDA
 - `src/cuda/distancias_l2_cuadradas.cu` contiene el launcher y el kernel CUDA
 - `src/cuda/seleccionar_top_k.cu` contiene el launcher y el kernel CUDA de selección
+- `src/cuda/votacion_uniforme.cu` contiene el launcher y el kernel CUDA de votación
 - `src/cpp/registro.cpp` registra la implementación CUDA del mismo esquema cuando la extensión se compila con CUDA
 - `setup.py` elige `CppExtension` o `CUDAExtension` según la disponibilidad de un toolkit compatible
 
@@ -59,6 +60,24 @@ La implementación acepta vistas no contiguas mediante `contiguous()` interno cu
 La operación rechaza tensores fuera de CUDA, dtype distinto de `float32`, dimensiones distintas de dos, matrices vacías, valores no finitos y valores de `k` fuera del intervalo de `1` a `N`
 
 Esta primera versión prioriza corrección y claridad sobre rendimiento, por lo que repite una reducción completa por cada uno de los `k` vecinos y todavía no usa tiling ni primitivas de warp
+
+## Votación uniforme
+
+`votacion_uniforme` es el tercer operador KNN implementado para CUDA y recibe etiquetas enteras originales con forma `[Q, K]`
+
+El kernel asigna un bloque de 256 threads a cada consulta y cada thread cuenta las apariciones de las etiquetas que procesa dentro de la fila
+
+La reducción de shared memory compara explícitamente los pares conteo y etiqueta para elegir mayor conteo y menor etiqueta en empate
+
+Las posiciones repetidas de una misma etiqueta pueden proponer el mismo candidato y no alteran el resultado porque conservan el mismo conteo y etiqueta
+
+No se codifican etiquetas ni se reserva memoria según el valor de las etiquetas, por lo que se admiten valores negativos, no consecutivos y grandes
+
+La operación admite dtypes enteros compatibles, incluidos `int32` e `int64`, y conserva el dtype de entrada en las predicciones
+
+No crea temporales globales adicionales, acepta vistas no contiguas mediante `contiguous()` interno cuando es necesario y usa el stream CUDA actual
+
+Esta primera versión tiene complejidad `O(Q × K²)` y prioriza corrección, determinismo y claridad antes de optimizaciones futuras
 
 ## Streams y errores
 
@@ -140,6 +159,6 @@ Google Colab es un entorno de desarrollo y validación opcional, no una dependen
 
 ## Limitaciones pendientes
 
-`distancias_l2_cuadradas` y `seleccionar_top_k` tienen implementación CUDA
+`distancias_l2_cuadradas`, `seleccionar_top_k` y `votacion_uniforme` tienen implementación CUDA
 
-`votacion_uniforme`, `predecir_knn`, la integración de `ClasificadorKNNCUDA`, los benchmarks y las optimizaciones de kernel permanecen pendientes
+`predecir_knn`, la integración de `ClasificadorKNNCUDA`, los benchmarks y las optimizaciones de kernel permanecen pendientes

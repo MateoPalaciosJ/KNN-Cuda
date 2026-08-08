@@ -25,6 +25,7 @@ fuentes_cpp = [
 fuentes_cuda = [
     "src/cuda/distancias_l2_cuadradas.cu",
     "src/cuda/seleccionar_top_k.cu",
+    "src/cuda/votacion_uniforme.cu",
 ]
 directorios_include = [
     str(raiz_proyecto / "src" / "cpp" / "include"),

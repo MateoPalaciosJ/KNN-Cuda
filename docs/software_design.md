@@ -24,7 +24,7 @@ El comportamiento de la API será el siguiente:
 - `vecinos_mas_cercanos()` recibe consultas y devuelve distancias e índices de los vecinos, respetando el orden determinista definido en este documento
 - `predecir()` busca los vecinos, aplica votación uniforme y devuelve las etiquetas en su representación original
 
-El estado del clasificador, incluyendo el conjunto de entrenamiento, las etiquetas codificadas y los metadatos, permanece gestionado por Python. La API debe ocultar al usuario la coordinación de la extensión C++ y de los kernels CUDA
+El estado del clasificador, incluyendo el conjunto de entrenamiento, las etiquetas originales y los metadatos, permanece gestionado por Python. La API debe ocultar al usuario la coordinación de la extensión C++ y de los kernels CUDA
 
 ## 2. Integración tecnológica
 
@@ -42,7 +42,7 @@ La división de responsabilidades será:
 - C++ valida las precondiciones críticas, recibe tensores y ejecuta operadores CPU en la Fase 2 u operaciones CUDA en la Fase 3
 - CUDA ejecutará operaciones sin estado sobre los tensores proporcionados a partir de la Fase 3
 
-Los operadores C++/CUDA no conservarán estado entre invocaciones ni conocerán la instancia de `ClasificadorKNNCUDA`. Tampoco conocerán las etiquetas originales; trabajarán únicamente con tensores y etiquetas codificadas
+Los operadores C++/CUDA no conservarán estado entre invocaciones ni conocerán la instancia de `ClasificadorKNNCUDA`. Reciben tensores con las etiquetas originales cuando la operación lo requiere y no necesitan metadatos externos de clases
 
 La compilación oficial será anticipada, como parte del flujo normal de preparación del paquete o del entorno de ejecución. La compilación JIT se utilizará únicamente para experimentación, prototipos y validaciones tempranas; no será el mecanismo oficial de distribución ni de ejecución estable
 
@@ -53,12 +53,12 @@ Los tensores de características respetarán estos contratos:
 - `datos_entrenamiento` tiene forma `[N, D]`, donde `N` es el número de muestras y `D` el número de características
 - `datos_consulta` tiene forma `[Q, D]`, donde `Q` es el número de consultas
 - `datos_entrenamiento` y `datos_consulta` usan `float32`
-- Las etiquetas codificadas usan `int64`
+- Las etiquetas usan un dtype entero compatible y conservan su representación original
 - Los índices de vecinos usan `int64`
 - Los tensores internos son contiguos
 - Todos los tensores internos se encuentran en el mismo dispositivo CUDA
 
-La API Python puede recibir `numpy.ndarray` o `torch.Tensor`. La capa Python convierte las entradas al formato interno requerido: tensor PyTorch, tipo `float32` para características, tipo `int64` para índices y etiquetas codificadas, disposición contigua y dispositivo CUDA. La conversión debe ser explícita y validable para que el usuario reciba errores comprensibles cuando una entrada no sea compatible
+La API Python puede recibir `numpy.ndarray` o `torch.Tensor`. La capa Python convierte las entradas al formato interno requerido: tensor PyTorch, tipo `float32` para características, tipo `int64` para índices, dtype entero original para etiquetas, disposición contigua y dispositivo CUDA. La conversión debe ser explícita y validable para que el usuario reciba errores comprensibles cuando una entrada no sea compatible
 
 Las salidas conservan el tipo de la entrada pública correspondiente: si la entrada pública es un `torch.Tensor`, la salida correspondiente también será un `torch.Tensor`; si la entrada pública es un `numpy.ndarray`, la salida correspondiente también será un `numpy.ndarray`. Internamente, todas las operaciones producen tensores CUDA y la capa Python realiza la conversión final cuando corresponde
 
@@ -66,20 +66,19 @@ Las salidas conservan el tipo de la entrada pública correspondiente: si la entr
 
 ## 4. Etiquetas
 
-La primera versión aceptará etiquetas enteras. Antes de invocar a CUDA, Python ordenará las etiquetas distintas y las codificará como valores contiguos desde cero
+La primera versión acepta etiquetas enteras originales sin necesidad de que sean consecutivas
 
-Por ejemplo, si las clases originales ordenadas son `2`, `5` y `9`, la representación interna será `0`, `1` y `2`, respectivamente. Esta transformación permite que los kernels trabajen con un dominio compacto y conocido
+Las etiquetas pueden ser negativas o tener valores grandes y se entregan directamente a `votacion_uniforme` tanto en CPU como en CUDA
 
 El flujo de etiquetas será:
 
-1. Python obtiene las clases distintas y las almacena ordenadas en `clases_`
-2. Python transforma cada etiqueta original en su código entero contiguo
-3. CUDA utiliza únicamente las etiquetas codificadas para la votación
-4. Python recupera las etiquetas originales mediante `clases_` antes de devolver las predicciones
+1. `seleccionar_top_k` obtiene `indices_seleccionados`
+2. La capa que coordina el pipeline recupera `etiquetas_vecinos` desde `etiquetas_entrenamiento`
+3. `votacion_uniforme(etiquetas_vecinos)` recibe las etiquetas originales y devuelve predicciones originales
 
-Las etiquetas de texto quedan fuera del alcance inicial. La clase `clases_` debe conservar el orden de las etiquetas originales ordenadas para que la decodificación sea determinista y para que el menor valor de etiqueta resuelva empates de votos
+Las etiquetas de texto quedan fuera del alcance inicial
 
-La codificación de etiquetas y `clases_` pertenecen únicamente al backend CUDA futuro. No forman parte del contrato del motor CPU de referencia ni de `votacion_uniforme`, que opera directamente sobre etiquetas originales
+No existe codificación de etiquetas, `clases_`, `numero_clases` ni decodificación posterior para `votacion_uniforme`
 
 ## 5. Distancias
 
@@ -112,9 +111,9 @@ Python debe generar errores comprensibles, indicando la condición incumplida y,
 
 1. Validar las dimensiones, tipos, valores finitos, tamaños y correspondencia entre muestras y etiquetas
 2. Convertir las características a `float32`, obtener una disposición contigua y preparar el dispositivo CUDA
-3. Ordenar y codificar las etiquetas enteras como valores `int64` contiguos desde cero
+3. Conservar las etiquetas enteras originales con su dtype compatible
 4. Transferir a GPU los tensores que deban ser utilizados por el motor
-5. Almacenar en el objeto Python los tensores preparados, las etiquetas codificadas, `clases_` y los metadatos necesarios
+5. Almacenar en el objeto Python los tensores preparados, las etiquetas originales y los metadatos necesarios
 
 `ajustar()` no ejecuta entrenamiento: KNN no aprende parámetros numéricos. La operación prepara y conserva el conjunto de referencia para consultas posteriores
 
@@ -147,7 +146,7 @@ En la referencia CPU actual, `predecir_knn` sigue este flujo:
 
 `votacion_uniforme` recibe únicamente `etiquetas_vecinos`, realiza votación uniforme y resuelve los empates por la etiqueta original menor
 
-En el backend CUDA futuro, `predecir()` reutilizará la búsqueda de vecinos y recuperará las etiquetas codificadas correspondientes a los índices antes de invocar `votacion_knn`. La decodificación posterior mediante `clases_` pertenece exclusivamente a ese backend y no modifica el contrato CPU actual
+En el backend CUDA, `predecir()` reutilizará la búsqueda de vecinos y recuperará las etiquetas originales correspondientes a los índices antes de invocar `votacion_uniforme`, igual que el backend CPU
 
 Cuando sea posible, `predecir()` debe evitar calcular raíces cuadradas, conservar matrices temporales que no necesita y realizar únicamente las transferencias necesarias para obtener las etiquetas finales, la búsqueda seguirá siendo exacta aunque se omitan de la ruta de predicción los datos de distancia que no participan en la votación
 
@@ -158,7 +157,6 @@ Las reglas de orden y desempate son parte del contrato funcional:
 - Los vecinos se ordenan por distancia ascendente
 - Si dos vecinos tienen la misma distancia, se prioriza el menor índice de entrenamiento
 - Si dos o más etiquetas tienen el mismo número de votos, gana la etiqueta original menor
-- `clases_` se almacena ordenado
 - El comportamiento completo debe ser determinista bajo las mismas entradas y configuración
 
 El orden por índice debe aplicarse tanto al ordenar resultados finales como al fusionar candidatos parciales. No se debe depender de un orden incidental producido por el paralelismo de CUDA
@@ -169,15 +167,14 @@ La separación inicial de módulos será la siguiente:
 
 - `clasificador.py` conserva el estado del clasificador y presenta la API pública
 - `_validacion.py` valida las entradas públicas y los parámetros
-- `_etiquetas.py` codifica y decodifica etiquetas y mantiene la correspondencia con `clases_`
 - `_operaciones.py` carga y encapsula los operadores registrados de PyTorch
 - `referencia.py` contiene la referencia CPU en NumPy para pruebas y comparación
 - `operaciones_knn.cpp` registra y valida los operadores C++/CUDA y coordina sus lanzamientos
 - `distancias_kernel.cu` calcula las distancias euclidianas cuadradas
 - `seleccion_top_k_kernel.cu` selecciona y fusiona vecinos locales y globales
-- `votacion_kernel.cu` realiza la votación sobre etiquetas codificadas
+- `votacion_uniforme.cu` realiza la votación sobre etiquetas originales
 
-CUDA no conoce Python ni las etiquetas originales. C++ tampoco debe conservar el estado del clasificador; recibe tensores, parámetros y metadatos de una operación y devuelve resultados. Python es la única capa responsable del estado de alto nivel y de la traducción entre etiquetas originales y codificadas
+CUDA no conoce Python ni conserva estado entre invocaciones. C++ tampoco conserva el estado del clasificador y recibe tensores y parámetros de una operación. `votacion_uniforme` recibe directamente las etiquetas originales y devuelve la predicción original
 
 ## 12. Operadores internos
 
@@ -195,15 +192,15 @@ Los operadores internos iniciales serán:
 - **Salidas:** índices `int64` y distancias cuadradas de los `k` vecinos por consulta, ordenados según las reglas de desempate
 - **Responsabilidad:** recorrer `datos_entrenamiento` por bloques, calcular distancias, obtener Top-K local, fusionar Top-K global y garantizar que ninguna muestra quede sin revisar
 
-### `votacion_knn`
+### `votacion_uniforme`
 
-- **Entradas:** `etiquetas_vecinos` con forma `[Q, K]`, tipo `int64` y dispositivo CUDA, además de `numero_clases`
-- **Salida:** `predicciones` con forma `[Q]`, tipo `int64` y dispositivo CUDA
-- **Responsabilidad:** realizar la votación uniforme y resolver empates de forma determinista
+- **Entradas:** `etiquetas_vecinos` con forma `[Q, K]`, dtype entero compatible y dispositivo CPU o CUDA
+- **Salida:** `predicciones` con forma `[Q]`, el mismo dtype entero y el dispositivo de entrada
+- **Responsabilidad:** realizar la votación uniforme sobre etiquetas originales y resolver empates por la etiqueta numéricamente menor
 
-`votacion_knn` no recibe índices de vecinos ni accede al conjunto completo de etiquetas de entrenamiento. La recuperación de `etiquetas_vecinos` a partir de los índices ocurre antes de invocar `votacion_knn`
+`votacion_uniforme` no recibe índices de vecinos, clases, `numero_clases`, etiquetas codificadas ni accede al conjunto completo de etiquetas de entrenamiento. La recuperación de `etiquetas_vecinos` a partir de los índices ocurre antes de invocar la operación
 
-`votacion_knn` es un operador interno previsto solo para el backend CUDA futuro y no es un contrato alternativo de `votacion_uniforme`. La función CPU `votacion_uniforme` recibe etiquetas originales sin codificación ni metadatos de clases adicionales
+El Dispatcher resuelve la implementación CPU C++ o CUDA de `votacion_uniforme` bajo el mismo contrato lógico
 
 Estos operadores son sin estado. Python conserva las referencias a los tensores de entrenamiento y etiquetas, y los pasa en cada llamada cuando corresponde
 
@@ -298,7 +295,6 @@ KNN-Cuda/
 │   │       ├── __init__.py       # API pública del paquete
 │   │       ├── clasificador.py   # ClasificadorKNNCUDA y estado Python
 │   │       ├── _validacion.py    # Validación de entradas y parámetros
-│   │       ├── _etiquetas.py     # Codificación y decodificación de etiquetas
 │   │       ├── _operaciones.py   # Carga y encapsulado de operadores
 │   │       └── referencia.py     # Referencia CPU en NumPy
 │   ├── cpp/

@@ -16,4 +16,6 @@ std::tuple<torch::Tensor, torch::Tensor> seleccionar_top_k_cuda(
     int64_t k
 );
 
+torch::Tensor votacion_uniforme_cuda(const torch::Tensor& etiquetas_vecinos);
+
 }

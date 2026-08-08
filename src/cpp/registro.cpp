@@ -34,6 +34,7 @@ TORCH_LIBRARY_IMPL(knn_cuda, CPU, modulo) {
 TORCH_LIBRARY_IMPL(knn_cuda, CUDA, modulo) {
     modulo.impl("distancias_l2_cuadradas", &knn_cuda::distancias_l2_cuadradas_cuda);
     modulo.impl("seleccionar_top_k", &knn_cuda::seleccionar_top_k_cuda);
+    modulo.impl("votacion_uniforme", &knn_cuda::votacion_uniforme_cuda);
 }
 #endif
 

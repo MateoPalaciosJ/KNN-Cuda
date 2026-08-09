@@ -58,17 +58,21 @@ Devuelve distancias seleccionadas `float32` e índices `int64` con forma `[Q, k]
 
 El kernel asigna un bloque de 256 threads a cada consulta y repite una reducción paralela para cada posición de salida
 
-Cada thread recorre una parte de la fila, propone su mejor candidato y la reducción de shared memory compara explícitamente los pares distancia e índice
+Cada thread recorre una parte de la fila y propone su mejor candidato local, después cada warp aplica un árbol fijo de `__shfl_down_sync` sobre pares distancia e índice
+
+Los ocho candidatos de warp se almacenan en shared memory y el warp cero aplica la misma reducción fija para obtener el ganador final
 
 Un candidato es mejor cuando su distancia es menor o cuando la distancia es igual y su índice original es menor, por lo que los empates son deterministas
 
 Un tensor temporal booleano `[Q, N]` registra los índices ya elegidos y evita seleccionar el mismo vecino dos veces sin modificar `distancias`
 
+La reducción usa 32 bytes para ocho distancias y 64 bytes para ocho índices `int64`, en lugar de los arreglos compartidos de 256 candidatos de la primera versión
+
 La implementación acepta vistas no contiguas mediante `contiguous()` interno cuando es necesario y lanza el kernel en el stream CUDA actual
 
 La operación rechaza tensores fuera de CUDA, dtype distinto de `float32`, dimensiones distintas de dos, matrices vacías, valores no finitos y valores de `k` fuera del intervalo de `1` a `N`
 
-Esta primera versión prioriza corrección y claridad sobre rendimiento, por lo que repite una reducción completa por cada uno de los `k` vecinos y todavía no usa tiling ni primitivas de warp
+La selección todavía explora la fila completa por cada uno de los `k` vecinos y mantiene la dependencia secuencial de la máscara, por lo que la complejidad global no cambia
 
 ## Votación uniforme
 

@@ -138,6 +138,24 @@ def test_seleccionar_top_k_cuda_funciona_con_n_mayor_a_un_bloque() -> None:
     )
 
 
+def test_seleccionar_top_k_cuda_resuelve_empates_entre_warps() -> None:
+    distancias = torch.full((1, 513), 10.0, dtype=torch.float32, device="cuda")
+    distancias[0, torch.tensor([7, 45, 100, 300], device="cuda")] = 1.0
+
+    distancias_seleccionadas, indices_seleccionados = (
+        torch.ops.knn_cuda.seleccionar_top_k(distancias, 4)
+    )
+
+    assert torch.equal(
+        distancias_seleccionadas,
+        torch.ones((1, 4), dtype=torch.float32, device="cuda"),
+    )
+    assert torch.equal(
+        indices_seleccionados,
+        torch.tensor([[7, 45, 100, 300]], dtype=torch.int64, device="cuda"),
+    )
+
+
 def test_seleccionar_top_k_cuda_rechaza_dtype_invalido() -> None:
     distancias_float64 = torch.tensor([[1.0]], dtype=torch.float64, device="cuda")
     distancias_enteras = torch.tensor([[1]], dtype=torch.int64, device="cuda")

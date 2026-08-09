@@ -9,6 +9,8 @@
 namespace {
 
 constexpr int hilos_por_bloque = 256;
+constexpr int hilos_por_warp = 32;
+constexpr int numero_warps_por_bloque = hilos_por_bloque / hilos_por_warp;
 
 void validar_matriz_cuda(const torch::Tensor& matriz, const char* nombre) {
     TORCH_CHECK(matriz.is_cuda(), nombre, " debe estar en CUDA");
@@ -34,6 +36,36 @@ __device__ bool candidato_es_mejor(
         (primera_distancia == segunda_distancia && primer_indice < segundo_indice);
 }
 
+__device__ void reducir_candidatos_warp(
+    float& distancia,
+    int64_t& indice
+) {
+    const unsigned mascara_warp = __activemask();
+    const int indice_lane = threadIdx.x % hilos_por_warp;
+
+    for (int desplazamiento = hilos_por_warp / 2;
+         desplazamiento > 0;
+         desplazamiento /= 2) {
+        const float distancia_companero =
+            __shfl_down_sync(mascara_warp, distancia, desplazamiento);
+        const int64_t indice_companero =
+            __shfl_down_sync(mascara_warp, indice, desplazamiento);
+
+        if (
+            indice_lane < desplazamiento &&
+            candidato_es_mejor(
+                distancia_companero,
+                indice_companero,
+                distancia,
+                indice
+            )
+        ) {
+            distancia = distancia_companero;
+            indice = indice_companero;
+        }
+    }
+}
+
 __global__ void seleccionar_top_k_kernel(
     const float* distancias,
     bool* seleccionados,
@@ -45,9 +77,11 @@ __global__ void seleccionar_top_k_kernel(
     const int64_t indice_consulta = static_cast<int64_t>(blockIdx.x);
     const int64_t inicio_fila = indice_consulta * numero_muestras;
     const int64_t inicio_salida = indice_consulta * k;
+    const int indice_warp = threadIdx.x / hilos_por_warp;
+    const int indice_lane = threadIdx.x % hilos_por_warp;
 
-    __shared__ float distancias_candidatas[hilos_por_bloque];
-    __shared__ int64_t indices_candidatos[hilos_por_bloque];
+    __shared__ float distancias_candidatas[numero_warps_por_bloque];
+    __shared__ int64_t indices_candidatos[numero_warps_por_bloque];
 
     for (int64_t posicion_seleccionada = 0;
          posicion_seleccionada < k;
@@ -74,34 +108,29 @@ __global__ void seleccionar_top_k_kernel(
             }
         }
 
-        distancias_candidatas[threadIdx.x] = distancia_mejor;
-        indices_candidatos[threadIdx.x] = indice_mejor;
+        reducir_candidatos_warp(distancia_mejor, indice_mejor);
+
+        if (indice_lane == 0) {
+            distancias_candidatas[indice_warp] = distancia_mejor;
+            indices_candidatos[indice_warp] = indice_mejor;
+        }
         __syncthreads();
 
-        for (int desplazamiento = blockDim.x / 2;
-             desplazamiento > 0;
-             desplazamiento /= 2) {
-            if (threadIdx.x < desplazamiento) {
-                const int indice_companero = threadIdx.x + desplazamiento;
-                if (candidato_es_mejor(
-                        distancias_candidatas[indice_companero],
-                        indices_candidatos[indice_companero],
-                        distancias_candidatas[threadIdx.x],
-                        indices_candidatos[threadIdx.x]
-                    )) {
-                    distancias_candidatas[threadIdx.x] =
-                        distancias_candidatas[indice_companero];
-                    indices_candidatos[threadIdx.x] =
-                        indices_candidatos[indice_companero];
-                }
+        if (indice_warp == 0) {
+            if (indice_lane < numero_warps_por_bloque) {
+                distancia_mejor = distancias_candidatas[indice_lane];
+                indice_mejor = indices_candidatos[indice_lane];
+            } else {
+                distancia_mejor = 0.0F;
+                indice_mejor = -1;
             }
-            __syncthreads();
+            reducir_candidatos_warp(distancia_mejor, indice_mejor);
         }
 
         if (threadIdx.x == 0) {
-            const int64_t indice_ganador = indices_candidatos[0];
+            const int64_t indice_ganador = indice_mejor;
             distancias_seleccionadas[inicio_salida + posicion_seleccionada] =
-                distancias_candidatas[0];
+                distancia_mejor;
             indices_seleccionados[inicio_salida + posicion_seleccionada] =
                 indice_ganador;
             seleccionados[inicio_fila + indice_ganador] = true;

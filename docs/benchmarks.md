@@ -92,6 +92,25 @@ La salida informa memoria CUDA asignada y pico adicional de una llamada, mientra
 
 Nsight Compute puede complementar este perfil con ocupacion, registros, spills, shared memory, eficiencia de memoria e instrucciones sin convertirse en dependencia del proyecto
 
+## Profiling del pipeline CUDA
+
+`perfilar_pipeline_cuda` captura una llamada completa a `knn_cuda::predecir_knn` despues de diez llamadas de calentamiento y usa por defecto el escenario grande de la linea base
+
+```powershell
+python -m benchmarks.perfilar_pipeline_cuda
+python -m benchmarks.perfilar_pipeline_cuda --traza pipeline_cuda.json
+```
+
+La captura usa N=2048, Q=128, D=64, k=20 y semilla 2026
+
+El profiler mide solo el pipeline nativo residente en CUDA y no incluye las transferencias de la API publica del clasificador
+
+Las tablas CPU y CUDA permiten inspeccionar los kernels de distancias, top-k y votacion, las operaciones ATen visibles del indexado de etiquetas, validaciones, reservas y lanzamientos
+
+La salida informa el cambio de memoria CUDA asignada durante la captura junto con el pico adicional
+
+Nsight Compute puede complementar el resultado para medir ocupacion, registros, spills, eficiencia de memoria e instrucciones sin convertirse en dependencia del proyecto
+
 ## Memoria CUDA
 
 El benchmark de operadores informa memoria CUDA asignada y pico adicional mediante las APIs de memoria de PyTorch

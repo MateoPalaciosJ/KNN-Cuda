@@ -114,7 +114,9 @@ El launcher usa el stream CUDA actual de PyTorch para el dispositivo de entrada 
 
 Después del lanzamiento usa `C10_CUDA_KERNEL_LAUNCH_CHECK` para informar errores de lanzamiento sin ocultarlos
 
-La comprobación de valores finitos forma parte de la validación del contrato y puede requerir sincronización de ese tensor antes del kernel
+La comprobación de valores finitos forma parte de la validación del contrato y puede requerir sincronización antes del kernel
+
+En `distancias_l2_cuadradas`, las reducciones de finitud de consulta y entrenamiento se combinan en una sola decisión host para el camino válido. Si falla, se consulta cada resultado solo para informar el tensor inválido, priorizando `datos_consulta` cuando ambos no son finitos
 
 ## Validaciones
 

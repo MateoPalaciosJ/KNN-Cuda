@@ -2,6 +2,7 @@
 
 #include <limits>
 
+#include <ATen/ops/logical_and.h>
 #include <c10/cuda/CUDAException.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <c10/cuda/CUDAStream.h>
@@ -14,12 +15,39 @@ constexpr int caracteristicas_por_baldosa = 32;
 constexpr int hilos_por_bloque =
     tamanio_baldosa_consultas * tamanio_baldosa_muestras;
 
-void validar_matriz_cuda(const torch::Tensor& matriz, const char* nombre) {
+void validar_matriz_cuda_sin_finitud(
+    const torch::Tensor& matriz,
+    const char* nombre
+) {
     TORCH_CHECK(matriz.is_cuda(), nombre, " debe estar en CUDA");
     TORCH_CHECK(matriz.scalar_type() == torch::kFloat32, nombre, " debe tener dtype float32");
     TORCH_CHECK(matriz.dim() == 2, nombre, " debe ser bidimensional");
     TORCH_CHECK(matriz.numel() > 0, nombre, " no debe estar vacio");
-    TORCH_CHECK(torch::isfinite(matriz).all().item<bool>(), nombre, " debe contener valores finitos");
+}
+
+void validar_finitud_matrices_cuda(
+    const torch::Tensor& datos_consulta,
+    const torch::Tensor& datos_entrenamiento
+) {
+    const auto consulta_finita = torch::isfinite(datos_consulta).all();
+    const auto entrenamiento_finito = torch::isfinite(datos_entrenamiento).all();
+    const auto matrices_finitas = at::logical_and(
+        consulta_finita,
+        entrenamiento_finito
+    );
+
+    if (matrices_finitas.item<bool>()) {
+        return;
+    }
+
+    TORCH_CHECK(
+        consulta_finita.item<bool>(),
+        "datos_consulta debe contener valores finitos"
+    );
+    TORCH_CHECK(
+        entrenamiento_finito.item<bool>(),
+        "datos_entrenamiento debe contener valores finitos"
+    );
 }
 
 __global__ void calcular_distancias_l2_cuadradas_kernel(
@@ -138,8 +166,12 @@ torch::Tensor distancias_l2_cuadradas_cuda(
     const torch::Tensor& datos_consulta,
     const torch::Tensor& datos_entrenamiento
 ) {
-    validar_matriz_cuda(datos_consulta, "datos_consulta");
-    validar_matriz_cuda(datos_entrenamiento, "datos_entrenamiento");
+    validar_matriz_cuda_sin_finitud(datos_consulta, "datos_consulta");
+    validar_matriz_cuda_sin_finitud(
+        datos_entrenamiento,
+        "datos_entrenamiento"
+    );
+    validar_finitud_matrices_cuda(datos_consulta, datos_entrenamiento);
     TORCH_CHECK(
         datos_consulta.device() == datos_entrenamiento.device(),
         "datos_consulta y datos_entrenamiento deben estar en el mismo dispositivo CUDA"

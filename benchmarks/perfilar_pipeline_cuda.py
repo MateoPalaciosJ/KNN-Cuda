@@ -67,7 +67,7 @@ def perfilar_pipeline_cuda(
         f"Profiling pipeline CUDA | escenario={escenario.nombre} | "
         f"N={escenario.numero_muestras} | Q={escenario.numero_consultas} | "
         f"D={escenario.numero_caracteristicas} | k={escenario.numero_vecinos} | "
-        f"semilla={escenario.semilla} | calentamiento={calentamiento}"
+        f"calentamiento={calentamiento}"
     )
     print(
         "Temporales esperados: distancias [Q, N], seleccionados [Q, N], "

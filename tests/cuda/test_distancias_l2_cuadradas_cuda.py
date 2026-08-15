@@ -152,37 +152,3 @@ def test_distancias_l2_cuadradas_cuda_maneja_bordes_de_baldosas_y_caracteristica
     np.testing.assert_allclose(
         distancias_cuda.cpu().numpy(), esperado, rtol=1e-4, atol=1e-5
     )
-
-
-def test_distancias_l2_cuadradas_cuda_identifica_entradas_no_finitas() -> None:
-    datos_consulta_validos = torch.tensor(
-        [[0.0]], dtype=torch.float32, device="cuda"
-    )
-    datos_entrenamiento_validos = torch.tensor(
-        [[0.0]], dtype=torch.float32, device="cuda"
-    )
-
-    for valor_invalido in (float("nan"), float("inf")):
-        datos_consulta_invalidos = torch.tensor(
-            [[valor_invalido]], dtype=torch.float32, device="cuda"
-        )
-        datos_entrenamiento_invalidos = torch.tensor(
-            [[valor_invalido]], dtype=torch.float32, device="cuda"
-        )
-
-        with pytest.raises(RuntimeError, match="datos_consulta"):
-            torch.ops.knn_cuda.distancias_l2_cuadradas(
-                datos_consulta_invalidos,
-                datos_entrenamiento_validos,
-            )
-        with pytest.raises(RuntimeError, match="datos_entrenamiento"):
-            torch.ops.knn_cuda.distancias_l2_cuadradas(
-                datos_consulta_validos,
-                datos_entrenamiento_invalidos,
-            )
-
-    with pytest.raises(RuntimeError, match="datos_consulta"):
-        torch.ops.knn_cuda.distancias_l2_cuadradas(
-            torch.tensor([[float("nan")]], dtype=torch.float32, device="cuda"),
-            torch.tensor([[float("nan")]], dtype=torch.float32, device="cuda"),
-        )

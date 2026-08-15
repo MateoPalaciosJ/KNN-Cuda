@@ -74,6 +74,16 @@ La operación rechaza tensores fuera de CUDA, dtype distinto de `float32`, dimen
 
 La selección todavía explora la fila completa por cada uno de los `k` vecinos y mantiene la dependencia secuencial de la máscara, por lo que la complejidad global no cambia
 
+Para casos experimentales compatibles, la selección usa una ruta alternativa de un bloque por consulta con top-k local por warp en shared memory y un merge final dentro del mismo bloque
+
+La ruta experimental requiere `k <= 32`, al menos `k` elementos por cada uno de los ocho segmentos y una reserva dinámica de shared memory no mayor que 16 KiB ni que el límite del dispositivo CUDA actual
+
+Cada distancia se carga una vez a shared memory, cada warp selecciona sus candidatos locales y el warp cero fusiona los ocho conjuntos de candidatos con el mismo comparador distancia e índice
+
+La ruta evita la máscara global `[Q, N]` y usa una máscara local por bloque, sin temporales globales adicionales
+
+Los tamaños que no cumplen esas condiciones usan el kernel anterior con máscara global, incluidos inicialmente los casos como `k = N`
+
 ## Votación uniforme
 
 `votacion_uniforme` es el tercer operador KNN implementado para CUDA y recibe etiquetas enteras originales con forma `[Q, K]`

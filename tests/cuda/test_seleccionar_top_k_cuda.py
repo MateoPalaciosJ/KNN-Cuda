@@ -156,6 +156,54 @@ def test_seleccionar_top_k_cuda_resuelve_empates_entre_warps() -> None:
     )
 
 
+def test_seleccionar_top_k_cuda_ruta_warp_coincide_con_numpy_y_cpu() -> None:
+    posiciones_empate = np.array(
+        [7, 45, 100, 200, 300, 400, 500, 600, 700, 800,
+         900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800,
+         1900, 2000],
+        dtype=np.int64,
+    )
+    distancias_numpy = np.full((1, 2048), 10.0, dtype=np.float32)
+    distancias_numpy[0, posiciones_empate] = 1.0
+    esperadas_numpy, indices_esperados_numpy = seleccionar_top_k(distancias_numpy, 20)
+    distancias_cuda = torch.from_numpy(distancias_numpy).cuda()
+    distancias_antes = distancias_cuda.clone()
+
+    primer_resultado = torch.ops.knn_cuda.seleccionar_top_k(distancias_cuda, 20)
+    segundo_resultado = torch.ops.knn_cuda.seleccionar_top_k(distancias_cuda, 20)
+    resultado_cpu = torch.ops.knn_cuda.seleccionar_top_k(
+        torch.from_numpy(distancias_numpy), 20
+    )
+
+    np.testing.assert_array_equal(primer_resultado[0].cpu().numpy(), esperadas_numpy)
+    np.testing.assert_array_equal(
+        primer_resultado[1].cpu().numpy(), indices_esperados_numpy
+    )
+    assert torch.equal(primer_resultado[0], segundo_resultado[0])
+    assert torch.equal(primer_resultado[1], segundo_resultado[1])
+    assert torch.equal(primer_resultado[0].cpu(), resultado_cpu[0])
+    assert torch.equal(primer_resultado[1].cpu(), resultado_cpu[1])
+    assert torch.equal(distancias_cuda, distancias_antes)
+
+
+def test_seleccionar_top_k_cuda_ruta_warp_acepta_vista_con_n_irregular() -> None:
+    distancias_base = torch.arange(
+        2051 * 2, dtype=torch.float32, device="cuda"
+    ).reshape(2051, 2)
+    distancias = distancias_base.transpose(0, 1)
+    esperadas_numpy, indices_esperados_numpy = seleccionar_top_k(
+        distancias.cpu().numpy(), 20
+    )
+
+    distancias_seleccionadas, indices_seleccionados = (
+        torch.ops.knn_cuda.seleccionar_top_k(distancias, 20)
+    )
+
+    assert not distancias.is_contiguous()
+    np.testing.assert_array_equal(distancias_seleccionadas.cpu().numpy(), esperadas_numpy)
+    np.testing.assert_array_equal(indices_seleccionados.cpu().numpy(), indices_esperados_numpy)
+
+
 def test_seleccionar_top_k_cuda_rechaza_dtype_invalido() -> None:
     distancias_float64 = torch.tensor([[1.0]], dtype=torch.float64, device="cuda")
     distancias_enteras = torch.tensor([[1]], dtype=torch.int64, device="cuda")

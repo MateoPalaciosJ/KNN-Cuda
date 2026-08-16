@@ -30,9 +30,9 @@ KNN-Cuda debe implementar un clasificador KNN exacto cuyo cálculo principal se 
 
 La estrategia oficial de integración nativa utilizará las extensiones de PyTorch y el dispatcher de PyTorch como único puente entre Python y C++ o CUDA
 
-La Fase 2 utilizará PyTorch como interfaz de tensores, infraestructura de extensión nativa, registro de operadores y despacho hacia implementaciones C++ CPU sin utilizar GPU ni CUDA
+La Fase 2 utilizó PyTorch como interfaz de tensores, infraestructura de extensión nativa, registro de operadores y despacho hacia implementaciones C++ CPU
 
-La Fase 3 incorporará implementaciones CUDA dentro de la misma arquitectura y conservará la API pública de `ClasificadorKNNCUDA`
+La Fase 3 incorporó implementaciones CUDA dentro de la misma arquitectura y conservó la API pública de `ClasificadorKNNCUDA`
 
 No se utilizará pybind11 como estrategia independiente ni existirán sistemas de binding paralelos
 
@@ -59,7 +59,7 @@ El proyecto debe cumplir los siguientes requisitos de calidad y operación:
 - Mantener una organización de código modular, con límites claros entre Python, C++ y CUDA.
 - Contar con pruebas automáticas para validar comportamiento y prevenir regresiones.
 - Mantener documentación técnica actualizada sobre arquitectura, requisitos y decisiones.
-- Permitir la ejecución de CUDA en Google Colab.
+- Permitir la ejecución de CUDA en cualquier entorno compatible, incluido Google Colab como opción de validación
 - Permitir el desarrollo local sin requerir una GPU.
 - Utilizar Git para el control de versiones y GitHub como repositorio remoto.
 - Mantener compatibilidad inicial con Linux en Google Colab.
@@ -69,8 +69,8 @@ El proyecto debe cumplir los siguientes requisitos de calidad y operación:
 
 Una implementación se considerará correcta cuando cumpla lo siguiente:
 
-- Los vecinos encontrados coinciden con una referencia basada en NumPy o con scikit-learn.
-- Las predicciones coinciden con scikit-learn en casos controlados.
+- Los vecinos y las predicciones coinciden con la referencia funcional primaria basada en NumPy.
+- La comparación secundaria con scikit-learn queda fuera del alcance de esta versión y no forma parte de sus dependencias.
 - Las distancias coinciden dentro de una tolerancia numérica adecuada para operaciones en `float32`.
 - Existen pruebas para conjuntos pequeños, empates de distancia y clasificación multiclase.
 
@@ -82,21 +82,23 @@ La evaluación del rendimiento debe:
 
 - Medir por separado el tiempo de CPU y el tiempo de GPU.
 - Separar el tiempo de transferencia de datos del tiempo de ejecución del kernel.
-- Medir el número de consultas procesadas por segundo.
+- Reportar mediana, promedio y dispersión de las mediciones reproducibles.
 - Calcular el *speedup* respecto a la referencia de CPU seleccionada.
 - Probar distintos tamaños de dataset, dimensionalidad y valores de `k`.
 - Evitar afirmar mejoras de rendimiento sin benchmarks reproducibles y con resultados revisados.
 
 Los benchmarks deben registrar las condiciones de ejecución relevantes, incluyendo hardware, versiones de software, tamaño de los datos y configuración usada.
 
+Las consultas por segundo quedan fuera del alcance de esta versión
+
 ## 8. Entorno de trabajo
 
 - **Desarrollo local:** Windows y VS Code.
 - **Referencia, pruebas e interfaz:** Python.
-- **Compilación y ejecución CUDA:** Google Colab con una GPU NVIDIA.
+- **Compilación y ejecución CUDA:** cualquier entorno con GPU NVIDIA, PyTorch y CUDA Toolkit compatibles
 - **Repositorio remoto:** GitHub.
 
-El entorno local debe permitir preparar documentación, desarrollar la interfaz, ejecutar pruebas que no dependan de CUDA y revisar cambios sin disponer de una GPU. La validación completa del motor CUDA se realizará en el entorno Linux de Google Colab.
+El entorno local debe permitir preparar documentación, desarrollar la interfaz, ejecutar pruebas CPU y revisar cambios sin disponer de una GPU. La validación completa del motor CUDA se realizará en cualquier entorno CUDA compatible y Google Colab será una opción de validación
 
 ## 9. Definición de terminado para cada etapa
 
@@ -120,5 +122,5 @@ Quedan fuera del alcance de la primera versión:
 - Ejecución multi-GPU.
 - Regresión.
 - Métricas arbitrarias distintas de la distancia euclidiana cuadrada definida inicialmente.
-- Soporte para CPU dentro del motor CUDA.
+- Selección automática implícita entre CPU y CUDA desde la API pública
 - Despliegue como servicio web.

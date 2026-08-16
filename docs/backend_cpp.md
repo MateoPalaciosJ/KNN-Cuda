@@ -6,13 +6,13 @@ La Fase 2 crea la primera infraestructura nativa del proyecto mediante extension
 
 Su objetivo es validar la cadena Python → PyTorch → C++ con operadores CPU registrados en el dispatcher de PyTorch
 
-NumPy conserva el papel de referencia primaria de corrección y el clasificador público continúa utilizando el motor de referencia durante esta fase
+NumPy conserva el papel de referencia primaria de corrección y `ClasificadorKNNCUDA` utiliza el backend C++ CPU desde la primera integración de Fase 4
 
 ## Arquitectura
 
 La ruta nativa oficial es Python → PyTorch → `CppExtension` → operadores propios → implementación CPU C++
 
-La Fase 3 añadirá implementaciones CUDA dentro de esta misma arquitectura sin crear una segunda estrategia de binding ni cambiar la API pública
+La Fase 3 añadió implementaciones CUDA dentro de esta misma arquitectura sin crear una segunda estrategia de binding ni cambiar la API pública
 
 El módulo interno compilado se llama `knn_cuda._backend_cpp` y su importación registra los operadores de esta fase
 
@@ -45,9 +45,9 @@ La implementación utiliza operaciones ATen para expresar directamente la resta 
 
 NumPy sigue siendo la referencia primaria de corrección y las pruebas comparan esta operación con `distancias_l2_cuadradas` del motor de referencia
 
-El esquema se define una sola vez y su implementación se registra para CPU, por lo que una fase posterior podrá registrar una implementación CUDA bajo el mismo esquema
+El esquema se define una sola vez y actualmente tiene implementaciones CPU y CUDA bajo el mismo Dispatcher
 
-No se han incorporado optimizaciones, bloques, paralelismo manual ni kernels CUDA
+La implementación CPU no incorpora optimizaciones, bloques ni paralelismo manual
 
 `seleccionar_top_k` es la segunda operación KNN real implementada en C++ durante la Fase 2
 
@@ -57,7 +57,7 @@ La operación ordena cada fila de forma ascendente mediante una ordenación esta
 
 La implementación se ejecuta solo en CPU, no requiere contigüidad y se compara con `seleccionar_top_k` de NumPy como referencia primaria
 
-CUDA permanece pendiente y podrá registrar su propia implementación bajo el mismo esquema
+CUDA ya registra su propia implementación bajo el mismo esquema
 
 `votacion_uniforme` es la tercera operación KNN real implementada en C++ durante la Fase 2
 
@@ -65,7 +65,7 @@ Recibe directamente `etiquetas_vecinos` originales con forma `[Q, K]`, aplica un
 
 La operación ordena las etiquetas de cada consulta, cuenta sus valores distintos y resuelve los empates por la etiqueta original numéricamente menor
 
-NumPy sigue siendo la referencia primaria y CPU es el único backend implementado mientras CUDA permanece pendiente
+NumPy sigue siendo la referencia primaria y CPU C++ convive con CUDA bajo los mismos esquemas
 
 ## Validaciones
 
@@ -97,15 +97,19 @@ Las etiquetas de vecinos se obtienen mediante indexado de `etiquetas_entrenamien
 
 La operación conserva los desempates deterministas de distancia y votación, prioriza la corrección sobre el rendimiento y se compara de forma integral con la referencia NumPy
 
-El pipeline C++ continúa siendo interno y `ClasificadorKNNCUDA` sigue utilizando la referencia NumPy
+El pipeline C++ continúa siendo interno y `ClasificadorKNNCUDA` lo invoca mediante el Dispatcher para el dispositivo CPU
 
-No existe CUDA en esta fase y la futura implementación CUDA reutilizará el mismo esquema de operador
+La implementación CUDA actual reutiliza el mismo esquema de operador
 
-## Compilación
+## Compilación desde fuente
 
-La extensión se compila durante la instalación editable mediante `CppExtension` y las herramientas oficiales de extensiones C++ de PyTorch
+Una extensión de PyTorch debe compilarse con la misma distribución de PyTorch que la cargará durante la ejecución para conservar compatibilidad ABI
 
-La instalación se ejecuta desde la raíz con `python -m pip install -e ".[test]"`
+Por esta razón, PyTorch debe instalarse antes de compilar KNN-Cuda desde fuente y la instalación editable oficial usa el entorno actual sin aislamiento de build
+
+La instalación CPU se ejecuta desde la raíz con `python -m pip install --no-build-isolation -e ".[test]"`
+
+Esta política conserva `CppExtension` para sistemas sin CUDA y evita compilar la extensión contra un PyTorch temporal diferente
 
 ## Pruebas
 
@@ -119,12 +123,12 @@ La verificación completa ejecuta primero esas pruebas y después `python -m pyt
 
 `seleccionar_top_k`, `votacion_uniforme` y `predecir_knn` ya están implementados en C++ CPU
 
-`ClasificadorKNNCUDA` todavía no utiliza el backend C++
+`ClasificadorKNNCUDA` utiliza el backend C++ CPU y mantiene entradas y salidas públicas NumPy
 
-CUDA, kernels y GPU siguen pendientes
+Los operadores nativos actuales tienen implementaciones CUDA validadas. `ClasificadorKNNCUDA` usa `"cpu"`, `"cuda"` o `"auto"` mediante el Dispatcher y conserva entradas y salidas públicas NumPy
 
-El temporal conceptual `[Q, N, D]` de `distancias_l2_cuadradas` continúa siendo un riesgo de memoria pendiente para las fases de optimización y CUDA
+El temporal conceptual `[Q, N, D]` de `distancias_l2_cuadradas` CPU continúa siendo un riesgo de memoria pendiente para fases de optimización
 
 No existe una API pública adicional
 
-La Fase 3 reutilizará el registro de operadores, la configuración de extensión y la separación entre contratos, implementación y registro para añadir implementaciones CUDA
+La Fase 3 reutilizó el registro de operadores, la configuración de extensión y la separación entre contratos, implementación y registro para añadir implementaciones CUDA

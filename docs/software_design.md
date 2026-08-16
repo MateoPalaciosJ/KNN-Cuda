@@ -1,6 +1,6 @@
 # Diseño de software de KNN-Cuda
 
-Este documento define el diseño técnico inicial de KNN-Cuda
+Este documento define el diseño técnico actual de KNN-Cuda
 
 Complementa la arquitectura y los requisitos del proyecto
 
@@ -8,9 +8,9 @@ Su principio central es demostrar primero la corrección del software y después
 
 ## 1. Producto y API pública
 
-El paquete Python se llamará `knn_cuda`. La clase pública principal será `ClasificadorKNNCUDA`, orientada a clasificación KNN exacta
+El paquete Python se llama `knn_cuda`. La clase pública principal es `ClasificadorKNNCUDA`, orientada a clasificación KNN exacta
 
-La clase proporcionará las operaciones públicas `__init__()`, `ajustar()`, `vecinos_mas_cercanos()` y `predecir()`
+La clase proporciona las operaciones públicas `__init__()`, `ajustar()`, `vecinos_mas_cercanos()` y `predecir()`
 
 La API pública vigente es `ClasificadorKNNCUDA(numero_vecinos=5, dispositivo="cpu")`
 
@@ -18,7 +18,7 @@ La API pública vigente es `ClasificadorKNNCUDA(numero_vecinos=5, dispositivo="c
 
 `dispositivo` acepta `"cpu"`, `"cuda"` y `"auto"`, sin introducir parámetros públicos de lotes o bloques
 
-El comportamiento de la API será el siguiente:
+El comportamiento de la API es el siguiente:
 
 - `ajustar()` recibe el conjunto de entrenamiento y sus etiquetas, prepara el estado del clasificador y devuelve `self` para permitir encadenamiento
 - `vecinos_mas_cercanos()` recibe consultas y devuelve distancias e índices de los vecinos, respetando el orden determinista definido en este documento
@@ -36,7 +36,7 @@ El valor predeterminado `"cpu"` preserva un comportamiento reproducible entre m�
 
 `dispositivo_efectivo_` es el único indicador visible del dispositivo seleccionado y se establece durante un `ajustar()` exitoso como `torch.device("cpu")` o el dispositivo CUDA actual
 
-La integración no expondrá tensores PyTorch en la API pública ni añadirá métodos públicos solo para consultar el backend
+La integración no expone tensores PyTorch en la API pública ni añade métodos públicos solo para consultar el backend
 
 ## 2. Integración tecnológica
 
@@ -48,19 +48,19 @@ La Fase 3 añadió implementaciones CUDA mediante `CUDAExtension` sin reemplazar
 
 No se utilizará pybind11 como estrategia independiente ni existirá un segundo sistema de binding
 
-La división de responsabilidades será:
+La división de responsabilidades es:
 
 - Python conserva el estado, valida las entradas públicas y coordina las llamadas
 - C++ valida las precondiciones críticas, recibe tensores y ejecuta operadores CPU
 - CUDA ejecuta operaciones sin estado sobre tensores CUDA
 
-Los operadores C++/CUDA no conservarán estado entre invocaciones ni conocerán la instancia de `ClasificadorKNNCUDA`. Reciben tensores con las etiquetas originales cuando la operación lo requiere y no necesitan metadatos externos de clases
+Los operadores C++/CUDA no conservan estado entre invocaciones ni conocen la instancia de `ClasificadorKNNCUDA`. Reciben tensores con las etiquetas originales cuando la operación lo requiere y no necesitan metadatos externos de clases
 
-La compilación oficial será anticipada, como parte del flujo normal de preparación del paquete o del entorno de ejecución. La compilación JIT se utilizará únicamente para experimentación, prototipos y validaciones tempranas; no será el mecanismo oficial de distribución ni de ejecución estable
+La compilación oficial es anticipada, como parte del flujo normal de preparación del paquete o del entorno de ejecución. La compilación JIT no forma parte del mecanismo oficial de distribución ni de ejecución estable
 
 ## 3. Contratos de datos
 
-Los tensores de características respetarán estos contratos:
+Los tensores de características respetan estos contratos:
 
 - `datos_entrenamiento` tiene forma `[N, D]`, donde `N` es el número de muestras y `D` el número de características
 - `datos_consulta` tiene forma `[Q, D]`, donde `Q` es el número de consultas
@@ -82,7 +82,7 @@ La primera versión acepta etiquetas enteras originales sin necesidad de que sea
 
 Las etiquetas pueden ser negativas o tener valores grandes y se entregan directamente a `votacion_uniforme` tanto en CPU como en CUDA
 
-El flujo de etiquetas será:
+El flujo de etiquetas es:
 
 1. `seleccionar_top_k` obtiene `indices_seleccionados`
 2. La capa que coordina el pipeline recupera `etiquetas_vecinos` desde `etiquetas_entrenamiento`
@@ -96,13 +96,13 @@ No existe codificación de etiquetas, `clases_`, `numero_clases` ni decodificaci
 
 Los kernels calculan la distancia euclidiana cuadrada entre cada consulta y cada muestra de entrenamiento. La búsqueda no calcula la raíz cuadrada, porque la transformación es monótona y no cambia el orden de los vecinos
 
-`vecinos_mas_cercanos()` devolverá distancia euclidiana normal para los `k` resultados finales, por tanto la raíz cuadrada se aplicará únicamente después de completar la selección de los vecinos, nunca durante el recorrido de búsqueda ni para los candidatos descartados
+`vecinos_mas_cercanos()` devuelve distancia euclidiana normal para los `k` resultados finales, por tanto la raíz cuadrada se aplica únicamente después de completar la selección de los vecinos, nunca durante el recorrido de búsqueda ni para los candidatos descartados
 
 `predecir()` con votación uniforme no necesita calcular raíces: la clasificación depende del orden de los vecinos y de sus etiquetas, no de la escala transformada de la distancia
 
 ## 6. Validaciones
 
-La capa Python validará las entradas públicas antes de solicitar operaciones nativas. Como mínimo, comprobará:
+La capa Python valida las entradas públicas antes de solicitar operaciones nativas. Como mínimo, comprueba:
 
 - Dimensiones correctas para datos de entrenamiento y consultas
 - Tipos compatibles sin conversiones automáticas de dtype
@@ -135,9 +135,9 @@ Cuando el dispositivo efectivo sea CUDA, el conjunto de entrenamiento completo d
 
 La integración reutiliza `distancias_l2_cuadradas` y `seleccionar_top_k` bajo el Dispatcher para el dispositivo efectivo
 
-La capa Python aplicará la raíz cuadrada únicamente a las distancias seleccionadas y devolverá `numpy.ndarray` para preservar el contrato público
+La capa Python aplica la raíz cuadrada únicamente a las distancias seleccionadas y devuelve `numpy.ndarray` para preservar el contrato público
 
-La ordenación conservará distancia ascendente y menor índice de entrenamiento en empate
+La ordenación conserva distancia ascendente y menor índice de entrenamiento en empate
 
 ## 9. Flujo de `predecir()`
 
@@ -152,7 +152,7 @@ En la referencia CPU actual, `predecir_knn` sigue este flujo:
 
 La integración invoca `knn_cuda::predecir_knn` mediante el Dispatcher y conserva las mismas etiquetas originales y reglas deterministas que la referencia NumPy
 
-Cuando sea posible, `predecir()` debe evitar calcular raíces cuadradas, conservar matrices temporales que no necesita y realizar únicamente las transferencias necesarias para obtener las etiquetas finales, la búsqueda seguirá siendo exacta aunque se omitan de la ruta de predicción los datos de distancia que no participan en la votación
+`predecir()` evita calcular raíces cuadradas y realiza únicamente las transferencias necesarias para obtener las etiquetas finales, la búsqueda sigue siendo exacta porque los valores de distancia no participan en la votación
 
 ## 10. Reglas de desempate
 
@@ -167,7 +167,7 @@ El orden por índice debe aplicarse al seleccionar resultados finales. No se deb
 
 ## 11. Capas
 
-La separación inicial de módulos será la siguiente:
+La separación vigente de módulos es la siguiente:
 
 - `clasificador.py` conserva el estado del clasificador y presenta la API pública
 - `referencia.py` contiene la referencia CPU en NumPy para pruebas y comparación
@@ -203,28 +203,30 @@ Los operadores internos vigentes son:
 
 El Dispatcher resuelve la implementación CPU C++ o CUDA de `votacion_uniforme` bajo el mismo contrato lógico
 
-Estos operadores son sin estado. Python conserva las copias NumPy de entrenamiento y etiquetas, y la futura integración preparará tensores internos para el dispositivo efectivo
+Estos operadores son sin estado. Python conserva las copias NumPy de entrenamiento y etiquetas, prepara tensores internos durante `ajustar()` y los mantiene en el dispositivo efectivo para reutilizarlos
 
 ## 13. Estrategia progresiva
 
-La implementación se desarrollará en etapas verificables:
+La implementación se completó en etapas verificables:
 
 1. **Referencia CPU NumPy:** define el comportamiento correcto, las formas, la ordenación y los desempates
 2. **Backend C++ CPU:** implementa y valida los cuatro operadores bajo el Dispatcher
 3. **Backend CUDA:** implementa y valida los mismos cuatro operadores bajo los mismos esquemas
 4. **Integración de Fase 4:** conecta `ClasificadorKNNCUDA` con CPU C++ y CUDA sin ampliar sus tipos públicos de entrada
-5. **Optimización posterior:** podrá introducir procesamiento por bloques y optimizaciones de kernel solo con pruebas de corrección y benchmarks que las justifiquen
+5. **Optimización de Fase 5:** incorporó tiling 2D con shared memory en distancias y reducción híbrida por warps en top-k después de validar corrección y rendimiento
 
 La progresión mantiene una referencia funcional disponible en todas las etapas. El orden de prioridad es primero corrección y después rendimiento
 
+Las optimizaciones adicionales quedan fuera del alcance de esta versión
+
 ## 14. Pruebas
 
-Las pruebas se dividirán entre entornos locales y CUDA:
+Las pruebas se dividen entre entornos locales y CUDA:
 
 - Las pruebas locales deben ejecutarse sin GPU y utilizar la referencia CPU en NumPy
-- Las pruebas CUDA se ejecutarán en cualquier entorno CUDA compatible y Google Colab será una opción de validación, no una dependencia
-- La comparación primaria será contra NumPy, que definirá los valores esperados de distancia, índices y predicciones bajo las reglas del proyecto
-- La comparación secundaria será contra scikit-learn en casos controlados compatibles con su configuración
+- Las pruebas CUDA se ejecutan en cualquier entorno CUDA compatible y Google Colab es una opción de validación, no una dependencia
+- La comparación primaria es contra NumPy, que define los valores esperados de distancia, índices y predicciones bajo las reglas del proyecto
+- La comparación secundaria con scikit-learn queda fuera del alcance de esta versión y no forma parte de sus dependencias
 
 La matriz de casos debe incluir, como mínimo:
 
@@ -249,7 +251,7 @@ La matriz de casos debe incluir, como mínimo:
 - Diferente cantidad de características entre entrenamiento y consultas
 - Entradas inválidas y mensajes de error
 
-La tolerancia inicial para valores `float32` será `rtol = 1e-4` y `atol = 1e-5`. Los índices y las predicciones deben coincidir exactamente según las reglas de orden y desempate definidas. La tolerancia numérica aplica a las distancias, no a la identidad de los vecinos ni a las etiquetas resultantes
+La tolerancia para valores `float32` es `rtol = 1e-4` y `atol = 1e-5`. Los índices y las predicciones deben coincidir exactamente según las reglas de orden y desempate definidas. La tolerancia numérica aplica a las distancias, no a la identidad de los vecinos ni a las etiquetas resultantes
 
 ## 15. Benchmarks
 
@@ -262,13 +264,15 @@ Los benchmarks deben distinguir las siguientes mediciones:
 
 Cada benchmark debe incluir calentamiento antes de registrar resultados, realizar varias repeticiones y reportar al menos la mediana. Las mediciones de CUDA deben usar sincronización explícita en los puntos necesarios para que la asincronía no oculte el tiempo real de ejecución
 
-Se reportarán consultas por segundo y *speedup* respecto a la referencia CPU elegida. Los experimentos variarán tamaños de dataset, dimensionalidad, número de consultas y valores de `k`
+Los benchmarks reportan mediana, promedio, desviación y *speedup* respecto a la referencia CPU elegida. Los experimentos varían tamaños de dataset, dimensionalidad, número de consultas y valores de `k`
+
+Las consultas por segundo quedan fuera del alcance de esta versión
 
 Cada resultado debe registrar hardware, versión de CUDA, versión de Python, versión y configuración de PyTorch, configuración de compilación, tamaños de entrada y parámetros del experimento. No se afirmará una mejora sin benchmarks reproducibles y resultados revisados funcionalmente
 
 ## 16. Limitaciones iniciales
 
-La primera versión tendrá estas limitaciones explícitas:
+La versión actual tiene estas limitaciones explícitas:
 
 - El conjunto de entrenamiento completo debe caber en VRAM
 - No habrá procesamiento out-of-core
@@ -282,15 +286,17 @@ La primera versión tendrá estas limitaciones explícitas:
 
 El desarrollo local sin GPU puede utilizar el backend CPU C++ y las pruebas CPU sin requerir CUDA
 
-## 17. Arquitectura objetivo de carpetas
+## 17. Estructura actual del repositorio
 
-La estructura objetivo completa será:
+La estructura actual es:
 
 ```text
 KNN-Cuda/
+├── .gitignore
 ├── src/
 │   ├── python/knn_cuda/
 │   │   ├── __init__.py
+│   │   ├── _backend_nativo.py
 │   │   ├── clasificador.py
 │   │   └── referencia.py
 │   ├── cpp/
@@ -312,9 +318,23 @@ KNN-Cuda/
 │       ├── test_distancias_l2_cuadradas_cuda.py
 │       ├── test_seleccionar_top_k_cuda.py
 │       ├── test_votacion_uniforme_cuda.py
-│       └── test_predecir_knn_cuda.py
+│       ├── test_predecir_knn_cuda.py
+│       └── test_clasificador_cuda.py
+├── benchmarks/
+│   ├── __init__.py
+│   ├── medicion.py
+│   ├── perfilado.py
+│   ├── benchmark_operadores.py
+│   ├── benchmark_pipeline.py
+│   ├── benchmark_clasificador.py
+│   ├── perfilar_distancias_cuda.py
+│   ├── perfilar_seleccionar_top_k_cuda.py
+│   └── perfilar_pipeline_cuda.py
 ├── docs/
+├── LICENSE
+├── README.md
 ├── pyproject.toml
+├── requirements.txt
 └── setup.py
 ```
 

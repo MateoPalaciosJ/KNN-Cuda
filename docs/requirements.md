@@ -69,8 +69,8 @@ El proyecto debe cumplir los siguientes requisitos de calidad y operación:
 
 Una implementación se considerará correcta cuando cumpla lo siguiente:
 
-- Los vecinos encontrados coinciden con una referencia basada en NumPy o con scikit-learn.
-- Las predicciones coinciden con scikit-learn en casos controlados.
+- Los vecinos y las predicciones coinciden con la referencia funcional primaria basada en NumPy.
+- La comparación secundaria con scikit-learn queda fuera del alcance de esta versión y no forma parte de sus dependencias.
 - Las distancias coinciden dentro de una tolerancia numérica adecuada para operaciones en `float32`.
 - Existen pruebas para conjuntos pequeños, empates de distancia y clasificación multiclase.
 
@@ -82,12 +82,14 @@ La evaluación del rendimiento debe:
 
 - Medir por separado el tiempo de CPU y el tiempo de GPU.
 - Separar el tiempo de transferencia de datos del tiempo de ejecución del kernel.
-- Medir el número de consultas procesadas por segundo.
+- Reportar mediana, promedio y dispersión de las mediciones reproducibles.
 - Calcular el *speedup* respecto a la referencia de CPU seleccionada.
 - Probar distintos tamaños de dataset, dimensionalidad y valores de `k`.
 - Evitar afirmar mejoras de rendimiento sin benchmarks reproducibles y con resultados revisados.
 
 Los benchmarks deben registrar las condiciones de ejecución relevantes, incluyendo hardware, versiones de software, tamaño de los datos y configuración usada.
+
+Las consultas por segundo quedan fuera del alcance de esta versión
 
 ## 8. Entorno de trabajo
 

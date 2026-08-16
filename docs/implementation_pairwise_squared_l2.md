@@ -2,11 +2,11 @@
 
 ## 1  Objetivo
 
-`distancias_l2_cuadradas` será la implementación CPU de referencia para calcular distancias euclidianas cuadradas entre un lote de consultas y el conjunto de entrenamiento
+`distancias_l2_cuadradas` es la implementación CPU de referencia para calcular distancias euclidianas cuadradas entre un lote de consultas y el conjunto de entrenamiento
 
-Su prioridad será la corrección, el determinismo, la claridad y la facilidad de validación. No busca un rendimiento competitivo ni debe incorporar decisiones de optimización que dificulten la revisión de la lógica
+Su prioridad es la corrección, el determinismo, la claridad y la facilidad de validación. No busca un rendimiento competitivo ni debe incorporar decisiones de optimización que dificulten la revisión de la lógica
 
-La función formará parte de la fuente primaria de verdad del motor CPU de referencia y servirá para validar las implementaciones posteriores en CUDA
+La función forma parte de la fuente primaria de verdad del motor CPU de referencia y sirve para validar las implementaciones nativas CPU y CUDA
 
 ## 2  Contrato
 
@@ -142,7 +142,7 @@ La dimensión `Q` conserva el orden de `datos_consulta`, la dimensión `N` conse
 - Una entrada con tipo incorrecto debe producir un error claro
 - No debe existir promoción intencional a `float64`
 
-Mantener `float32` es importante porque la implementación CUDA futura utilizará el mismo tipo base. La referencia debe detectar un tipo distinto antes del cálculo, en lugar de ocultar la diferencia mediante una conversión implícita
+Mantener `float32` es importante porque la implementación CUDA utiliza el mismo tipo base. La referencia debe detectar un tipo distinto antes del cálculo, en lugar de ocultar la diferencia mediante una conversión implícita
 
 La precisión se evaluará con los criterios definidos para `float32`. Una pequeña diferencia numérica debe analizarse como parte de las pruebas y no corregirse mediante conversiones silenciosas
 

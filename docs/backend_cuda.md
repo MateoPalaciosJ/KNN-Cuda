@@ -186,7 +186,17 @@ Para validar en Google Colab o en cualquier máquina CUDA compatible se debe com
 
 Google Colab es un entorno de desarrollo y validación opcional, no una dependencia del código ni de la instalación
 
-## Limitaciones pendientes
+## Benchmarks y profiling
+
+La infraestructura de medición actual incluye `benchmark_operadores`, `benchmark_pipeline` y `benchmark_clasificador`
+
+El profiling específico está disponible mediante `perfilar_distancias_cuda`, `perfilar_seleccionar_top_k_cuda` y `perfilar_pipeline_cuda`
+
+La optimización aceptada de `distancias_l2_cuadradas` utiliza tiling 2D, bloques de 16 por 16 threads, shared memory y segmentos de 32 características
+
+La optimización aceptada de `seleccionar_top_k` utiliza un bloque de 256 threads por consulta, reducción híbrida por warps mediante `__shfl_down_sync`, candidatos intermedios en shared memory, comparador lexicográfico por distancia e índice y la máscara global `seleccionados` con forma `[Q, N]`
+
+## Limitaciones actuales
 
 `distancias_l2_cuadradas`, `seleccionar_top_k`, `votacion_uniforme` y `predecir_knn` tienen implementación CUDA
 
@@ -194,4 +204,4 @@ Google Colab es un entorno de desarrollo y validación opcional, no una dependen
 
 `dispositivo_efectivo_` conserva el dispositivo resuelto durante `ajustar()` y evita cambiar de backend en cada predicción
 
-Los benchmarks y las optimizaciones de kernel permanecen pendientes
+Las optimizaciones adicionales de kernels quedan fuera del alcance de esta versión

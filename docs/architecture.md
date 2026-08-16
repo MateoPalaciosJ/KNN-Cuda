@@ -1,14 +1,14 @@
-# Arquitectura inicial del motor KNN exacto con CUDA
+# Arquitectura del motor KNN exacto con CUDA
 
 ## 1. Objetivo del proyecto
 
-El proyecto tiene como objetivo construir un motor de **K vecinos más cercanos (KNN) exacto**, acelerado con CUDA. La primera versión estará orientada a clasificación y buscará los vecinos mediante fuerza bruta, calculando la distancia entre cada consulta y cada elemento del conjunto de referencia.
+El proyecto implementa un motor de **K vecinos más cercanos (KNN) exacto**, acelerado con CUDA. La versión actual está orientada a clasificación y busca los vecinos mediante fuerza bruta, calculando la distancia entre cada consulta y cada elemento del conjunto de referencia.
 
-La prioridad inicial es obtener resultados correctos, reproducibles y comparables con la implementación CPU propia basada en NumPy y las reglas deterministas de KNN-Cuda. scikit-learn se utilizará únicamente como referencia secundaria en casos compatibles y sin ambigüedad
+La referencia funcional primaria es la implementación CPU propia basada en NumPy y las reglas deterministas de KNN-Cuda. La comparación secundaria con scikit-learn queda fuera del alcance de esta versión y no forma parte de sus dependencias
 
 ## 2. Flujo general
 
-El flujo de ejecución previsto es:
+El flujo de ejecución actual es:
 
 ```text
 Python → ClasificadorKNNCUDA → PyTorch → extensión C++/CUDA → dispatcher de PyTorch → CPU C++ o CUDA
@@ -20,7 +20,8 @@ Python → ClasificadorKNNCUDA → PyTorch → extensión C++/CUDA → dispatche
 4. La Fase 2 implementó operadores CPU mediante C++
 5. La Fase 3 añadió implementaciones CUDA y kernels para GPU bajo los mismos esquemas
 6. La Fase 4 integra el clasificador público con CPU C++ o CUDA mediante el Dispatcher sin crear una segunda API
-7. El resultado vuelve a Python mediante PyTorch en un formato utilizable para el usuario
+7. La Fase 5 incorporó benchmarks, profiling y las optimizaciones CUDA aceptadas sin cambiar los contratos
+8. El resultado vuelve a Python mediante PyTorch en un formato utilizable para el usuario
 
 No se utilizará pybind11 como estrategia independiente ni existirá un segundo sistema de binding
 
@@ -32,7 +33,7 @@ No se utilizará pybind11 como estrategia independiente ni existirá un segundo 
 - Rechazar dtype incompatible sin conversiones silenciosas y preparar tensores internos a partir de entradas públicas válidas
 - Preparar los buffers que se entregarán a la extensión C++ y devolver las predicciones en una estructura familiar para el ecosistema Python.
 - Exponer errores de forma comprensible, sin ocultar fallos de la capa nativa o de CUDA.
-- Facilitar scripts, notebooks y pruebas de comparación contra scikit-learn.
+- Facilitar scripts de benchmarks, profiling y pruebas de comparación contra NumPy.
 
 La capa Python no debe contener la lógica intensiva de cálculo de distancias. Su función principal es servir como interfaz, validar entradas y coordinar el uso del motor.
 
@@ -51,7 +52,7 @@ La extensión C++ es una capa de coordinación y seguridad. Ejecuta operadores C
 
 ## 5. Responsabilidades de los kernels CUDA
 
-Los kernels CUDA serán responsables del trabajo masivamente paralelo sobre la GPU:
+Los kernels CUDA son responsables del trabajo masivamente paralelo sobre la GPU:
 
 - Calcular la distancia euclidiana cuadrada entre las consultas y los puntos del conjunto de referencia.
 - Mantener o producir los candidatos necesarios para encontrar los `k` vecinos de menor distancia.
@@ -60,7 +61,7 @@ Los kernels CUDA serán responsables del trabajo masivamente paralelo sobre la G
 - Evitar operaciones de precisión o conversiones no documentadas que alteren la equivalencia con la referencia.
 - Dejar los resultados en buffers que la capa C++ pueda transferir de vuelta a Python.
 
-La primera implementación puede separar las fases de cálculo, selección y votación para facilitar la verificación. Las fusiones de kernels, el uso de memoria compartida y otras optimizaciones quedan para una etapa posterior.
+La implementación mantiene separadas las fases de cálculo, selección y votación para facilitar la verificación. La optimización aceptada de distancias utiliza tiling 2D con shared memory y la optimización aceptada de top-k utiliza reducción híbrida por warps sin fusionar operadores.
 
 ## 5.1 Integración nativa por fases
 
@@ -74,13 +75,12 @@ La compilación CPU utiliza `CppExtension` y la compilación con CUDA utiliza `C
 
 ## 6. Estrategia de validación
 
-La implementación CPU propia basada en NumPy será la referencia primaria de comportamiento de la primera versión. La validación se realizará con conjuntos pequeños, casos controlados y datos aleatorios reproducibles
+La implementación CPU propia basada en NumPy es la referencia primaria de comportamiento de la versión actual. La validación utiliza conjuntos pequeños, casos controlados y datos aleatorios reproducibles
 
-scikit-learn será una referencia secundaria para comparar resultados en casos compatibles y sin ambigüedad
+La comparación secundaria con scikit-learn queda fuera del alcance de esta versión
 
 - Comparar primero las distancias, los índices y las predicciones del motor CUDA con la referencia CPU propia usando las mismas reglas de orden y desempate
-- Comparar de forma secundaria las predicciones con `KNeighborsClassifier` usando la misma métrica, el mismo valor de `k` y el mismo conjunto de referencia cuando no existan ambigüedades de desempate
-- Confirmar que ambos lados usan datos `float32` y que la distancia comparada es la euclidiana cuadrada, teniendo en cuenta que scikit-learn puede presentar la distancia euclidiana sin elevar al cuadrado en sus salidas.
+- Confirmar que NumPy y los backends nativos usan datos `float32` y que la distancia interna comparada es la euclidiana cuadrada.
 - Probar distintos tamaños de conjunto, dimensiones, cantidades de consultas y valores válidos de `k`.
 - Incluir casos límite: `k = 1`, `k` igual al número de muestras de referencia, clases repetidas y consultas coincidentes con puntos existentes.
 - Diseñar casos con empates de distancia y verificar que la regla de desempate esté definida y sea estable. Si la referencia y el motor no resuelven un empate de la misma forma, la diferencia deberá identificarse y documentarse explícitamente.
@@ -91,44 +91,46 @@ La validación debe cubrir primero la corrección de la salida; el tiempo de eje
 
 ## 7. Estrategia de benchmarks
 
-Los benchmarks medirán por separado el comportamiento del motor y el coste total de uso desde Python.
+Los benchmarks miden por separado el comportamiento del motor y el coste total de uso desde Python.
 
 - Medir el tiempo de extremo a extremo: preparación, transferencias, ejecución y retorno del resultado.
 - Medir también el tiempo del cálculo en GPU después de una fase de calentamiento, para distinguir el coste fijo de inicialización del coste de cómputo.
 - Variar el número de muestras de referencia, consultas, dimensiones y valor de `k`.
-- Comparar contra scikit-learn en CPU usando el mismo conjunto de datos y los mismos parámetros.
+- Comparar los resultados medidos contra la referencia NumPy para confirmar su corrección.
 - Registrar hardware, versión de CUDA, versión de Python, configuración de compilación y características de los datos.
 - Repetir cada medición varias veces e informar medidas representativas, como mediana y dispersión.
 - Verificar la corrección de los resultados durante los benchmarks para evitar medir una implementación rápida pero incorrecta.
 
-Los resultados deberán almacenarse de forma reproducible en `benchmarks/` y presentarse con suficiente contexto para interpretar cuándo la aceleración compensa el coste de las transferencias.
+Los scripts reproducibles viven en `benchmarks/` y presentan suficiente contexto para interpretar cuándo la aceleración compensa el coste de las transferencias. Las consultas por segundo quedan fuera del alcance de esta versión.
 
 ## 8. Principio de desarrollo
 
 **Primero corrección, luego optimización.**
 
-La arquitectura inicial favorecerá implementaciones simples, comprobables y deterministas. Cada optimización deberá conservar una referencia funcional clara, incluir pruebas de regresión y demostrar una mejora mediante benchmarks. No se considerará terminada una mejora de rendimiento si modifica resultados válidos o introduce comportamientos no reproducibles.
+La arquitectura favorece implementaciones simples, comprobables y deterministas. Cada optimización deberá conservar una referencia funcional clara, incluir pruebas de regresión y demostrar una mejora mediante benchmarks. No se considerará terminada una mejora de rendimiento si modifica resultados válidos o introduce comportamientos no reproducibles.
 
-## 9. Arquitectura objetivo de carpetas
+## 9. Estructura actual del repositorio
 
-La organización prevista del repositorio es:
+La organización actual del repositorio es:
 
 ```text
 KNN-Cuda/
+├── .gitignore
 ├── src/
 │   ├── python/          # API y adaptadores de alto nivel
 │   ├── cpp/             # Extensión nativa y coordinación CUDA
 │   └── cuda/            # Kernels y utilidades de GPU
 ├── tests/               # Pruebas unitarias, de integración y de equivalencia
 ├── benchmarks/          # Medición, configuración y resultados de rendimiento
-├── data/                # Datos pequeños o referencias reproducibles
-├── examples/            # Ejemplos de uso
-├── notebooks/           # Exploración y validación en Google Colab
 ├── docs/                # Documentación de arquitectura y decisiones
+├── LICENSE
+├── pyproject.toml
+├── requirements.txt
+├── setup.py
 └── README.md            # Introducción y guía de inicio
 ```
 
-La estructura es un objetivo de organización: los nombres concretos de módulos y archivos se definirán al implementar cada componente. La interfaz Python, la extensión C++ y los kernels CUDA deben conservar límites claros para que cada capa pueda probarse de manera independiente.
+La interfaz Python, la extensión C++, los kernels CUDA, las pruebas, los benchmarks y la documentación conservan límites claros para que cada capa pueda probarse de manera independiente.
 
 ## 10. Decisiones iniciales
 

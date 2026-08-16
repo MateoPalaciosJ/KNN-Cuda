@@ -6,7 +6,7 @@ El motor CPU implementado con NumPy será la fuente primaria de verdad para vali
 
 Su objetivo no es alcanzar rendimiento competitivo, sino ofrecer una base correcta, determinista y fácil de probar. La implementación debe ser sencilla de leer y suficientemente explícita para que cualquier diferencia con CUDA pueda localizarse en una etapa concreta
 
-scikit-learn será una referencia secundaria para validar predicciones en casos controlados y sin ambigüedad. La referencia primaria seguirá siendo NumPy, porque permite comprobar por separado distancias, selección de vecinos y votación bajo las reglas exactas del proyecto
+La referencia primaria es NumPy, porque permite comprobar por separado distancias, selección de vecinos y votación bajo las reglas exactas del proyecto. La comparación secundaria con scikit-learn queda fuera del alcance de esta versión y no forma parte de sus dependencias
 
 ## 2  Alcance inicial
 
@@ -236,7 +236,7 @@ Las pruebas deben estar separadas por función para localizar con precisión cua
 
 - Pipeline completo
 - Comparación con resultados manuales
-- Comparación con scikit-learn en casos sin ambigüedad
+- Comparación con resultados NumPy y casos manuales
 - Reproducibilidad
 
 ### Entradas inválidas
@@ -261,7 +261,7 @@ La fase se considera correcta cuando:
 - Cada función tiene una sola responsabilidad
 - Todas las pruebas pasan
 - Los resultados coinciden con los casos manuales
-- Los resultados coinciden con scikit-learn cuando sus reglas son compatibles
+- Los resultados coinciden con NumPy y con los casos manuales aprobados
 - Los empates siguen las reglas del proyecto
 - No existen dependencias distintas de NumPy y pytest para esta fase
 - El código puede entenderse sin conocer CUDA
